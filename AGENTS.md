@@ -8,19 +8,20 @@
 ## Product definition
 - Primary problem: AI coding agents currently inherit broad user permissions and can expand blast radius across code, secrets, credentials, and network access.
 - Initial target users: individual developers and small engineering teams using tools like Claude Code, Codex, Cursor, Copilot, Aider, Goose, and OpenCode.
-- Initial market wedge: Windows desktop developers first, with macOS and Linux following after the Windows execution model is solid.
+- Initial market wedge: macOS and Linux developers first through a desktop app that makes kernel-level agent sandboxing usable.
 - Product position: a policy and visibility layer around agent execution, not another code-review bot and not a generic LLM firewall.
 
 ## Non-goals
 - Do not add cloud dependency to the free tier.
 - Do not turn this into a generic observability platform.
 - Do not build team admin, SSO, SOC2-heavy workflows, or browser dashboards before the local enforcement loop is solid.
+- Do not imply Windows support before a separate Windows enforcement architecture exists.
 
 ## Architecture guardrails
 - Prefer local-first architecture.
 - Enforce security controls outside model prompts. Prefer OS/kernel primitives, wrappers, allowlists, and deterministic checks over prompt instructions.
-- Treat the enforcement engine as replaceable. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means the product cannot assume `greywall` is the only or primary runtime.
-- Preserve an engine abstraction so the repo can later support alternate runtimes or a maintained fork.
+- Treat the enforcement engine as replaceable. `greywall` is the initial reference implementation for macOS/Linux, but the product cannot assume it will always be the only runtime.
+- Preserve an engine abstraction so the repo can later support a maintained fork or alternate runtimes.
 - The first valuable loop is:
   1. choose project + agent + profile
   2. launch sandboxed session
@@ -35,35 +36,35 @@
 
 | Module | Type | Path | What it owns | How to run | Tests | Docs | AGENTS |
 |--------|------|------|--------------|------------|-------|------|--------|
-| desktop | tauri | `apps/desktop/` | Local GUI, tray, session orchestration, live violation view | `pnpm dev` or `npm run dev` from `apps/desktop/` | UI/unit tests from module | `docs/architecture.md` | `apps/desktop/AGENTS.md` |
-| daemon | rust | `crates/rampartd/` | Agent launch orchestration, profile resolution, local APIs, process supervision | `cargo run -p rampartd` | `cargo test -p rampartd` | `docs/architecture.md` | `crates/rampartd/AGENTS.md` |
-| policy-core | rust library | `crates/policy-core/` | Policy schema, validation, profile compilation, event normalization | consumed by workspace crates | `cargo test -p policy-core` | `docs/architecture.md` | `crates/policy-core/AGENTS.md` |
-| engine-greywall | rust adapter | `crates/engine-greywall/` | Wrapper around greywall binary, parsing stdout/stderr/events, version compatibility | consumed by daemon | `cargo test -p engine-greywall` | `docs/architecture.md` | `crates/engine-greywall/AGENTS.md` |
-| shared-ui | typescript package | `packages/shared-ui/` | Reusable UI primitives, domain components, design tokens | module-local story/test flow | package tests | `docs/architecture.md` | `packages/shared-ui/AGENTS.md` |
+| desktop | tauri | `apps/desktop/` | Local GUI, tray, onboarding, project/profile picker, live session and history views | `pnpm dev` or `npm run dev` from `apps/desktop/` | UI/unit tests from module | `docs/architecture.md` | `apps/desktop/AGENTS.md` |
+| daemon | rust | `crates/rampartd/` | Agent launch orchestration, profile resolution, local APIs, process supervision, persistence | `cargo run -p rampartd` | `cargo test -p rampartd` | `docs/architecture.md` | `crates/rampartd/AGENTS.md` |
+| policy-core | rust library | `crates/policy-core/` | Policy schema, validation, template handling, profile compilation, event normalization | consumed by workspace crates | `cargo test -p policy-core` | `docs/architecture.md` | `crates/policy-core/AGENTS.md` |
+| engine-greywall | rust adapter | `crates/engine-greywall/` | Wrapper around `greywall` binary, binary discovery, version compatibility, stdout/stderr/event parsing, capability reporting | consumed by daemon | `cargo test -p engine-greywall` | `docs/architecture.md` | `crates/engine-greywall/AGENTS.md` |
+| shared-ui | typescript package | `packages/shared-ui/` | Reusable UI primitives, design tokens, session and policy components | module-local story/test flow | package tests | `docs/architecture.md` | `packages/shared-ui/AGENTS.md` |
 | docs | docs | `docs/` | Architecture, roadmap, threat model, product decisions, onboarding | n/a | n/a | self | `docs/AGENTS.md` |
 
 - If the real structure diverges, update this file first.
 
 ## Priority roadmap
-- Phase 0: repo scaffolding, architecture docs, product language, threat model, design constraints.
-- Phase 1: local desktop shell, tray, project picker, agent/profile picker, launch sandboxed session, event stream UI.
-- Phase 2: policy editing, reusable presets, local session history, violation explanations, safe profile learning/recommendation.
-- Phase 3: team features behind clear boundaries: shared policies, signed profile distribution, centralized audit sync, org settings.
-- Phase 4: CI and headless modes, broader engine support, enterprise controls.
+- Phase 0: repo scaffolding, architecture docs, threat model, capability boundaries, product language.
+- Phase 1: local desktop shell, project picker, agent/profile picker, launch sandboxed session, event stream UI.
+- Phase 2: profile editing, reusable presets, local session history, violation explanations, safe policy refinement.
+- Phase 3: team features behind clear boundaries: shared policies, audit aggregation, alerts, kill switch workflows.
+- Phase 4: CI and headless modes, broader engine support, enterprise controls where justified.
 
 ## Cross-domain workflows
 - Desktop -> daemon:
   - Desktop should talk to the local daemon over a narrow internal API.
   - Keep command construction, process launch, and policy enforcement out of the UI layer.
 - Daemon -> engine adapter:
-  - Engine adapters own binary discovery, compatibility checks, profile translation, and structured event conversion.
+  - Engine adapters own binary discovery, compatibility checks, profile translation, capability reporting, and structured event conversion.
   - Adapters must fail loudly with actionable diagnostics.
 - Policy flow:
-  - Policies start from opinionated presets per agent/tool.
+  - Policies start from opinionated presets per agent/tool/project type.
   - User edits produce validated policy definitions.
   - Daemon compiles validated policy into engine-specific launch configuration.
 - Event flow:
-  - Engine emits logs/violations/raw events.
+  - Engine emits logs, violations, and raw events.
   - Adapter normalizes them into Rampart event types.
   - Daemon persists local history and streams live updates to the desktop app.
 
@@ -73,7 +74,8 @@
 - Policy: the user-facing rule set defining allowed paths, network rules, and execution boundaries.
 - Profile: a reusable policy preset for a tool or workflow.
 - Violation: an attempted action blocked or flagged by enforcement.
-- Audit event: structured record of an allow, block, launch, exit, or policy change.
+- Audit event: structured record of an allow, block, launch, exit, alert, or policy change.
+- Capability snapshot: the detected set of enforcement features available on the current engine and OS.
 
 ## Security and trust rules
 - Default-deny is the baseline posture.
@@ -83,9 +85,9 @@
   - policy authoring
 - Treat the repository as public-facing. Do not expose private strategy, personal goals, internal planning notes, unpublished operational details, private markdown files, secrets, credentials, local-only paths, or hidden collaboration context in code, docs, commits, PR text, issues, or generated assets.
 - Public artifacts should describe the product, not the founder's private working process.
-- Never imply protection that is not actually enforced on the current OS.
+- Never imply protection that is not actually enforced on the current OS and engine.
 - If macOS and Linux capabilities differ, surface that difference in both product behavior and docs.
-- If Windows, macOS, and Linux capabilities differ, surface that difference in product behavior and public docs without disclosing internal implementation shortcuts or private roadmap reasoning.
+- If future Windows support differs materially, surface that difference in product behavior and public docs without disclosing internal implementation shortcuts.
 - Be precise about limitations around temporary files, atomic writes, rename semantics, proxying, and engine coverage.
 - Prefer open formats and auditable logic. Users must be able to understand why the product blocked something.
 
@@ -107,9 +109,9 @@
 - For sandbox behavior, include at least one negative-path test or manual repro for blocked access.
 
 ## Product strategy context
-- The strongest near-term wedge is agent blast-radius control for developers and small teams, starting on Windows where agent adoption and enterprise desktop presence are high.
+- The strongest near-term wedge is agent blast-radius control for developers and small teams through a local desktop product.
 - The defensible product is not just a sandbox binary; it is usable policy management, visibility, trust, and workflow fit.
-- The fastest route to usefulness is local desktop UX over real enforcement primitives, with Windows support treated as a first-class design constraint.
+- The fastest route to usefulness is local desktop UX over real enforcement primitives, with honest documentation of platform-specific capability gaps.
 
 ## Git workflow
 - Always commit completed changes unless the user explicitly asks not to.

@@ -2,68 +2,48 @@
 
 ## Purpose
 
-Rampart is a local-first blast-radius limiter for AI coding agents. It gives developers and teams a practical control plane for what an agent can touch, where it can connect, and how its actions are recorded. The product exists because current AI coding tools inherit the full permissions of the developer session, while most teams lack deterministic controls, audit visibility, and a reliable kill path.
+Rampart is a local-first blast-radius limiter for AI coding agents. It lets developers launch supported agents inside a constrained execution environment, observe blocked and allowed activity, and refine policy without editing low-level sandbox syntax.
 
-This document turns the research and product thesis into a buildable architecture.
+This document describes the product architecture reflected by the current PRD: desktop-first on macOS and Linux, `greywall` as the initial enforcement adapter, and a product boundary that preserves room for future runtimes.
 
-## Problem statement
+## Product scope
 
-AI coding agents can:
-- read sensitive files such as `.env`, SSH keys, cloud credentials, or project secrets
-- modify files outside the intended workspace
-- make network requests with developer or project context
-- continue acting after the user has lost context on what they are doing
+Rampart is designed to solve a specific problem:
 
-Existing products skew toward:
-- post-hoc review
-- generic LLM gateways
-- enterprise governance layers
+- AI coding agents inherit broad local permissions
+- teams lack deterministic controls at the execution layer
+- blocked behavior is rarely explained clearly
+- there is often no practical local audit trail or stop path
 
-The product gap is an enforcement-first developer tool that works at the execution layer.
+Rampart is not intended to be:
 
-## Product goals
+- a prompt or content filtering product
+- a generic observability platform
+- an enterprise governance suite before the local product is solid
 
-### Primary goals
-- Launch supported AI agents inside a least-privilege environment.
-- Make blocked behavior visible in real time.
-- Let users choose or refine policies without editing low-level sandbox rules directly.
-- Preserve a local-first, low-friction experience for solo developers.
-- Create a path to team-wide policy sharing and auditability.
+## Core architecture decisions
 
-### Secondary goals
-- Support multiple agent tools behind one product workflow.
-- Keep enforcement engine pluggable.
-- Build trust through transparent, inspectable decisions and limitations.
+| Decision | Current choice | Notes |
+|---|---|---|
+| Desktop shell | Tauri | Native tray, installer, and local integration fit the product shape |
+| UI stack | TypeScript + React | Fast UI iteration for onboarding, session view, and policy editing |
+| Local orchestration | Rust | Strong fit for process management, engine integration, and reliability |
+| Persistence | SQLite | Local-first storage for sessions, alerts, profiles, and settings |
+| Initial enforcement path | `greywall` via adapter | Treat as a binary dependency, not an imported library |
+| Supported platforms in v1 | macOS and Linux | Capability differences must be surfaced in product behavior |
+| Windows strategy | Deferred | Requires a separate enforcement model and should not be implied by current docs |
 
-### Non-goals
-- Full cross-platform parity in v1.
-- Generic model observability for prompts/responses.
-- Cloud-required workflows in the free product.
-- Replacing endpoint security, EDR, or enterprise identity systems.
-
-## Target users
-
-### Primary
-- Individual developers using agentic coding tools daily.
-- Engineering teams of roughly 5 to 50 developers.
-- Engineering managers who want policy and evidence without heavy enterprise rollout.
-
-### Later
-- Platform/security teams standardizing local agent controls.
-- CI and automation environments running headless agent tasks.
-
-## Proposed repo architecture
-
-The current repository is nearly empty. Build toward a workspace split that keeps enforcement, policy logic, and UX separate.
+## Repo architecture
 
 ```text
 rampart/
 |- AGENTS.md
 |- docs/
 |  |- architecture.md
-|  |- adr/
+|  |- PRD.md
+|  |- roadmap.md
 |  |- threat-model.md
-|  `- roadmap.md
+|  `- adr/
 |- apps/
 |  `- desktop/
 |- crates/
@@ -78,16 +58,16 @@ rampart/
 
 ```mermaid
 flowchart LR
-    U["Developer"] --> D["Rampart desktop app"]
+    U["Developer"] --> D["Desktop app"]
     D --> R["Local daemon (rampartd)"]
-    R --> P["Policy compiler / validator"]
+    R --> P["Policy core"]
     R --> E["Engine adapter"]
-    E --> G["Sandbox engine (greywall initially)"]
+    E --> G["greywall binary"]
     G --> A["AI coding agent"]
     G --> EV["Raw logs / violations"]
     EV --> E
     E --> R
-    R --> H["Local event store"]
+    R --> S["Local SQLite store"]
     R --> D
 ```
 
@@ -95,147 +75,145 @@ flowchart LR
 
 ## 1. Desktop app
 
-Likely stack:
-- Tauri
-- TypeScript for UI
-- Rust bridge where needed
-
 Responsibilities:
-- project/workspace selection
-- agent selection
-- profile selection
-- session launch UX
-- real-time event and violation display
-- local history browsing
-- policy editing UX
-- settings and engine diagnostics
 
-Why this layer exists:
-- This is the product surface users trust or reject.
-- The value is not only blocking actions; it is making enforcement understandable and operationally usable.
+- onboarding and engine diagnostics
+- project selection
+- agent detection and selection
+- profile/template picker
+- live session state and violation view
+- session history browsing
+- policy editing UX
+- alerts, tray actions, and user-visible explanations
+
+Rules:
+
+- do not construct sandbox commands in the UI
+- do not embed engine-specific logic in view code
+- clearly surface unsupported capabilities per platform
 
 ## 2. Local daemon (`rampartd`)
 
-Likely stack:
-- Rust
-- internal local API for desktop communication
-- SQLite for session/event storage
-
 Responsibilities:
-- resolve selected project, agent, profile, and environment
-- validate launch requests
-- construct engine-specific runtime configuration
-- spawn and supervise sandboxed sessions
-- normalize and persist events
-- stream live state to desktop clients
-- own capability detection per OS
 
-Why this layer exists:
-- Keeps system/process logic out of the UI.
-- Creates a stable internal contract even if the GUI changes.
-- Provides a future headless path for CLI or CI support.
+- validate launch requests from the desktop app
+- resolve project, agent, environment, and profile
+- compile user policy into runtime configuration
+- launch and supervise sandboxed sessions
+- collect, normalize, and persist events
+- stream live session updates to the UI
+- own capability detection and diagnostics
+
+Why it exists:
+
+- isolates process and persistence logic from the GUI
+- creates a stable internal API for future desktop and CLI clients
+- enables a later headless mode without re-architecting the product
 
 ## 3. Policy core
 
 Responsibilities:
+
 - canonical policy schema
-- profile inheritance and overrides
+- profile templates and overrides
 - validation and conflict detection
-- compile abstract policy to engine-specific config
-- normalize enforcement results into product-level concepts
+- compilation into engine-ready configuration
+- normalization of enforcement outcomes into product concepts
 
-Policy areas:
+User-facing policy concepts should stay above raw sandbox syntax. The user should edit:
+
 - filesystem scope
-- allowed write roots
-- temporary-file behavior
+- writable roots
 - network policy
-- process/command restrictions
-- environment redaction or pass-through rules
+- process boundaries
+- reusable profile templates
 
-Design principle:
-- Users should edit product concepts, not raw sandbox syntax.
+The product should not expose raw `greywall` YAML as the default authoring surface.
 
-## 4. Engine adapter
-
-Initial adapter approach:
-- keep `engine-greywall` for macOS/Linux support and reference behavior
-- leave room for a Windows-first adapter or engine path without restructuring the product
+## 4. Engine adapter (`engine-greywall`)
 
 Responsibilities:
-- discover the engine binary
-- verify compatible version
-- translate compiled policy into runtime arguments/config files
-- parse stdout/stderr/log streams
-- map raw engine output to Rampart event types
-- report unsupported features precisely
 
-Why an adapter boundary matters:
-- reduces lock-in to one upstream project
-- allows maintained forks or alternate engines later
-- keeps product logic independent from engine quirks
+- discover and validate the `greywall` binary
+- check version compatibility
+- translate compiled Rampart policy into runtime arguments and config
+- parse stdout, stderr, and event streams
+- normalize engine output into Rampart event types
+- report capability gaps precisely
 
-## 5. Sandbox engine
+Design rule:
 
-Initial engine strategy:
-- Windows-first product delivery means the enforcement engine must be abstracted from the start
-- `greywall` is still valuable as the first documented macOS/Linux engine path
-- Windows may require a different runtime or implementation path entirely
+- keep the adapter boundary narrow and explicit so upstream engine changes do not leak through the entire product
 
-Role:
-- actual enforcement of filesystem, syscall, and network boundaries using OS-specific primitives
+## 5. Enforcement engine
 
-Rampart should treat the engine as:
+Initial engine:
+
+- `greywall` as the current macOS/Linux execution engine
+
+Rampart treats the engine as:
+
 - authoritative for what was technically enforced
-- versioned and capability-scoped
-- something that may differ by platform
+- capability-scoped by platform
+- replaceable in future
 
-## Key workflows
+This matters because platform behavior is not identical. For example:
 
-## Workflow A: Start a sandboxed session
+- Linux may support richer network capture or blocking paths than macOS
+- temporary files and rename flows may behave differently from the user's intent
+- unsupported rules must be rejected or downgraded explicitly
 
-1. User picks project.
-2. User picks agent and profile.
-3. Desktop sends launch request to daemon.
-4. Daemon resolves environment and validates policy.
-5. Policy core compiles the profile.
-6. Engine adapter translates policy to engine config.
-7. Daemon starts the engine and child agent process.
-8. Desktop shows active session status immediately.
+## Core workflows
 
-Success criteria:
-- launch latency is low enough to feel native
-- failures are actionable and specific
+## Workflow A: launch a sandboxed session
 
-## Workflow B: Handle a violation
+1. User selects a project, agent, and profile.
+2. Desktop sends a launch request to the daemon.
+3. Daemon validates the request and loads the saved or selected policy.
+4. Policy core compiles the abstract policy.
+5. Engine adapter translates that policy into `greywall` launch configuration.
+6. Daemon starts the engine and agent process.
+7. Desktop immediately shows active session state, capability status, and live events.
 
-1. Agent attempts blocked access.
-2. Engine emits raw violation/log data.
-3. Adapter parses and normalizes the event.
-4. Daemon stores it and streams it to the desktop app.
-5. Desktop explains:
+Success conditions:
+
+- launch is low-friction
+- engine failures are actionable
+- the user can tell what platform protections are active
+
+## Workflow B: handle a blocked action
+
+1. Agent attempts a blocked operation.
+2. The engine emits a raw event.
+3. The adapter parses and normalizes the event.
+4. The daemon stores it and streams it to the desktop app.
+5. The desktop app explains:
    - what was attempted
    - why it was blocked
-   - what policy allowed or denied it
-6. User can inspect or revise policy safely.
+   - which policy rule applied
+   - whether the current platform has any relevant limitation
 
-Success criteria:
-- violations are understandable by a developer in seconds
-- the user never mistakes a partial capability for full protection
+Success conditions:
 
-## Workflow C: Create or refine a profile
+- blocked behavior is understandable in seconds
+- the UI never overstates what was enforced
 
-1. User starts from a preset for a tool/workflow.
-2. User narrows allowed paths and network behavior.
-3. Policy core validates constraints.
-4. Desktop previews the likely impact.
-5. User saves locally.
+## Workflow C: create or refine a profile
+
+1. User starts from a preset template.
+2. Rampart auto-detects likely project type when possible.
+3. User refines allowed paths or network behavior through product-level controls.
+4. Policy core validates the result.
+5. The desktop app persists the profile locally and reuses it for future sessions.
 
 Later extension:
-- signed shared profiles distributed to team members
+
+- repository-backed team policy import/export through `.rampart/policy.json`
 
 ## Data model
 
 Core entities:
+
 - `Project`
 - `AgentTool`
 - `Profile`
@@ -243,220 +221,177 @@ Core entities:
 - `Session`
 - `ViolationEvent`
 - `AuditEvent`
+- `Alert`
 - `EngineCapabilitySnapshot`
 
-Example conceptual relationships:
-- a project can have many profiles
-- a profile can be used across many sessions
-- a session emits many events
-- an engine capability snapshot informs what policy features are actually enforceable
+Representative session fields:
 
-## Platform strategy
+- session id
+- started and ended timestamps
+- agent name
+- project directory
+- profile name
+- files read
+- files written
+- files blocked
+- network domains allowed
+- network domains blocked
+- blocked action count
+- terminated-by-user state
 
-## Windows
-
-Priority:
-- primary target platform
-- first platform that product workflows should feel complete on
-
-Expected strengths:
-- strong relevance for enterprise and mixed-team developer environments
-- clear differentiation if local agent controls are usable on the platform most teams already deploy
-
-Risks:
-- different enforcement primitives than macOS/Linux
-- higher implementation complexity if no existing engine maps cleanly to product needs
-- risk of overpromising before the Windows runtime strategy is proven
+## Platform model
 
 ## macOS
 
 Priority:
-- second-wave platform after the Windows model is validated
 
-Expected strengths:
-- meaningful local developer market
-- viable app/tray distribution path
+- first supported desktop platform in v1
 
-Expected limitations:
-- possible feature gaps relative to Linux
-- network enforcement/visibility may lag Linux
+Rules:
 
-Rule:
-- never market macOS as having parity unless it actually does
+- document network limitations clearly
+- never imply Linux-equivalent observability unless verified
 
 ## Linux
 
 Priority:
-- second-wave platform after Windows
-- likely strongest technical benchmark for deep enforcement
 
-Expected strengths:
-- mature low-level controls
-- better long-term story for deep filesystem and network restrictions
+- second supported desktop platform in v1
+- foundation for later headless and CI support
 
-Risks:
-- path/rename semantics
-- complexity of low-level troubleshooting
-- product value may skew too technical if Linux becomes the default mental model
+Rules:
+
+- use Linux as the richer capability baseline where justified
+- document filesystem and rename limitations clearly
+
+## Windows
+
+Status:
+
+- not in v1 scope
+
+Rule:
+
+- keep the enforcement layer abstract enough that a Windows-specific runtime can be added later without reworking the product model
 
 ## Security model
 
-Rampart has three layers of trust:
+Rampart has three distinct trust layers:
 
 1. Product policy layer
-- what the user intends to allow
+- what the user intended to allow
 
 2. Product orchestration layer
 - how Rampart compiles, launches, records, and explains behavior
 
 3. Enforcement layer
-- what the engine and OS actually block or allow
+- what the engine and OS actually blocked or allowed
 
-Important principle:
-- Rampart must distinguish between intended policy and verified enforcement.
+Important rule:
 
-If the engine cannot enforce a rule on a platform, the product should say so directly and downgrade or reject that policy.
+- Rampart must distinguish intended policy from verified enforcement
+
+If a rule cannot be enforced on the current platform, the product should say so directly.
 
 ## Observability model
 
 Local-first observability should include:
-- session start/stop
-- attempted file access
-- blocked writes
-- network attempt summaries
+
+- session start and stop
+- filesystem access summaries
+- blocked operations
+- network attempt summaries where supported
 - policy version used
 - engine version used
-- user actions that changed policy
+- alerts and user-triggered termination events
 
-Do not overbuild this into a generic analytics platform early. The point is operational trust and explainability.
+The purpose is operational trust, not generic analytics.
 
-## UX principles
+## Known technical risks
 
-- Default-deny, but not opaque-deny.
-- Explain the exact rule behind a block.
-- Show platform capability gaps before the user hits them.
-- Optimize for the first 5 minutes of value:
-  - install
-  - choose project
-  - launch agent safely
-  - see one meaningful event
-- Avoid enterprise jargon in the core user flow.
+## 1. Atomic write and rename behavior
 
-## Risks and architectural pressure points
+Problem:
 
-## 1. Upstream dependency risk
+- some sandboxed write flows use temporary files and later rename into the workspace
 
-If the product depends heavily on greywall behavior or CLI format:
-- adapter brittleness increases
-- release compatibility becomes a product issue
+Implication:
 
-Mitigation:
-- version checks
-- adapter tests
-- documented compatibility matrix
-- maintainable fork strategy if needed
+- path-scoped intent and syscall-level enforcement may diverge
 
-## 2. Cross-platform inconsistency
+Response:
 
-If Windows, macOS, and Linux differ materially:
-- support burden rises
-- trust drops if the UX implies parity
+- prefer directory-level policy guidance
+- document limitations clearly
+- test negative paths explicitly
 
-Mitigation:
-- capability detection
-- platform-specific docs and copy
-- honest feature matrices
+## 2. macOS network limitations
 
-## 3. Security theater risk
+Problem:
 
-If the UI promises broad safety without real enforcement:
-- trust collapses
+- network capture and enforcement may be weaker than Linux
 
-Mitigation:
-- map every visible protection claim to a verified engine capability
+Response:
 
-## 4. Policy complexity
+- show limited network status in product UI and docs
+- do not market parity where it does not exist
 
-Low-level sandbox controls are hard for users to reason about.
+## 3. Upstream dependency risk
 
-Mitigation:
-- presets
-- safe defaults
-- narrow user-facing abstractions
-- rich explanations instead of raw policy syntax
+Problem:
 
-## 5. Performance and friction
+- `greywall` is an upstream project with its own release cadence and constraints
 
-If launch/setup overhead is too high:
-- users bypass the product
+Response:
 
-Mitigation:
-- thin orchestration
-- fast startup
-- cached engine checks
-- minimal mandatory configuration
+- adapter version checks
+- compatibility tests
+- maintainable fork path if required
 
-## Suggested implementation phases
+## 4. Trust failure through overstated claims
 
-## Phase 0: foundation
-- finalize product language
-- scaffold repo and workspace layout
-- define policy schema
-- define event schema
-- write threat model
-- document capability matrix assumptions
+Problem:
 
-## Phase 1: local MVP
+- a security product loses credibility if the UI implies protections that are not actually enforced
+
+Response:
+
+- every visible protection claim must map to a verified capability
+
+## Suggested implementation order
+
+## Phase 0
+
+- repo scaffolding
+- architecture and threat docs
+- policy and event schema design
+- engine capability framing
+
+## Phase 1
+
 - desktop shell
-- daemon
-- greywall adapter
-- project/agent/profile picker
+- local daemon
+- `greywall` adapter
+- project and profile selection
 - session launch
-- live violation stream
-- local session history
+- live event stream
 
-Outcome:
-- one developer can use Rampart daily on supported machines
+## Phase 2
 
-## Phase 2: policy UX
 - editable presets
-- policy diffing
+- local history
 - better diagnostics
-- local recommendations from past violations
+- safer policy refinement
 
-Outcome:
-- product moves from wrapper to usable workflow tool
+## Phase 3
 
-## Phase 3: team mode
-- shared profiles
-- audit sync
-- org-level policy bundles
-- basic admin view
+- local alerts
+- persistent audit history
+- team policy import/export
+- team sync boundaries
 
-Outcome:
-- manager or team lead can standardize usage
+## Phase 4
 
-## Phase 4: expanded surfaces
-- CI/headless mode
-- alternate engines
-- enterprise integrations where justified
-
-## Immediate next files to add after this doc
-
-- `docs/threat-model.md`
-- `docs/roadmap.md`
-- `docs/adr/0001-workspace-layout.md`
-- nested `AGENTS.md` files once `apps/`, `crates/`, and `packages/` exist
-
-## Decision summary
-
-The correct first architecture for Rampart is:
-- local-first
-- desktop-led
-- daemon-backed
-- policy-driven
-- adapter-based
-- Windows-first
-- honest about platform limits
-
-That shape matches the research context, preserves the strongest product wedge, and leaves room for team and enterprise expansion without compromising the initial developer workflow.
+- headless and CI flows
+- broader engine support
+- enterprise features where justified

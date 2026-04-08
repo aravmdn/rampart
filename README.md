@@ -1,53 +1,65 @@
 # Rampart
 
-Rampart is a security control plane for AI coding agents.
+Rampart is a local-first security control plane for AI coding agents.
 
-It is designed to reduce the blast radius of tools such as Claude Code, Codex, Cursor, Copilot, Aider, Goose, and OpenCode by enforcing execution boundaries around what those agents can access and by making policy outcomes visible to the user.
+It runs supported agents inside an enforced sandbox and gives developers a usable view of what was allowed, what was blocked, and why. The initial product focus is a desktop experience for macOS and Linux, with the enforcement layer kept replaceable so future runtimes, including Windows-specific paths, can be added without redesigning the product.
 
-## Why Rampart
+## Why It Exists
 
-AI coding agents operate at the execution layer. They can read files, modify code, invoke tools, and make network requests with the permissions available to the session that launched them.
+AI coding agents inherit the permissions of the developer session that launches them. In practice that means an agent may be able to:
 
-That creates a practical gap for developers and teams:
-- agents often inherit more access than they should
-- most workflows lack clear, deterministic policy boundaries
-- security visibility usually arrives after the fact, if at all
+- read secrets such as `.env` files, SSH keys, and cloud credentials
+- write outside the intended project scope
+- make outbound network requests with developer context
+- continue acting without a clear audit trail or reliable stop path
 
-Rampart exists to close that gap with local-first control, enforcement, and visibility.
+Rampart exists to shrink that blast radius with deterministic controls at the execution layer rather than prompt-only instructions.
 
 ## What Rampart Does
 
-Rampart is being built to provide:
-- controlled execution boundaries for AI coding agents
-- clear policy outcomes for attempted access and blocked actions
-- a product workflow that fits day-to-day developer usage rather than only post-hoc review
-- a path from individual use to team policy and auditability
+Rampart is being built around five core capabilities:
 
-## Design Principles
+- sandboxed session launch for supported coding agents
+- project-scoped policy profiles with safe defaults
+- live visibility into blocked and allowed activity
+- persistent local audit history
+- clear user-visible explanations of enforcement outcomes and platform limitations
+
+## Product Principles
 
 - Local-first by default
-- Execution-layer control instead of prompt-only safety
-- Replaceable enforcement engine architecture
-- Clear communication of platform capabilities and limitations
-- Product UX that prioritizes trust, visibility, and operational clarity
+- Enforcement outside model prompts
+- Replaceable engine architecture
+- Honest platform capability reporting
+- Developer-first UX before team administration
 
-## Platform Focus
+## Current Product Direction
 
-Rampart is currently oriented around:
-- Windows first
-- macOS and Linux after the Windows execution model is validated
+Rampart is currently documented around:
 
-Platform support should be understood as capability-specific rather than assumed to be identical across operating systems.
+- desktop application built with Tauri
+- Rust-based local orchestration and policy services
+- `greywall` as the initial macOS/Linux engine adapter
+- free tier without required cloud dependency
+- team features added only after the core local enforcement loop is solid
+
+Current limitations are intentional:
+
+- Windows is not a v1 target because it requires a different enforcement runtime
+- macOS and Linux do not have identical capability coverage
+- network observability and blocking may differ by platform and engine support
 
 ## Architecture
 
-Rampart is structured around a small number of clear system boundaries:
-- a desktop application for user interaction and live session visibility
-- a local daemon for launch orchestration, supervision, and event handling
-- a policy core for policy definition, validation, and normalization
-- an engine adapter layer so enforcement is not tied to a single runtime
+Rampart is structured around a few explicit system boundaries:
 
-Additional architectural detail is documented in:
+- desktop app for launch, visibility, and policy UX
+- local daemon for orchestration, supervision, and persistence
+- policy core for validation and compilation
+- engine adapter layer so enforcement is not coupled to a single runtime
+
+Additional detail:
+
 - [Architecture](C:\projects\rampart\docs\architecture.md)
 - [Threat model](C:\projects\rampart\docs\threat-model.md)
 - [Roadmap](C:\projects\rampart\docs\roadmap.md)
@@ -73,12 +85,11 @@ rampart/
 - [Threat model](C:\projects\rampart\docs\threat-model.md)
 - [Roadmap](C:\projects\rampart\docs\roadmap.md)
 - [Workspace ADR](C:\projects\rampart\docs\adr\0001-workspace-layout.md)
+- [Product reference document](C:\projects\rampart\docs\PRD.md)
 
 ## Open Source
 
-Rampart is open source under the Apache 2.0 license.
-
-The repository is intended to document the product, its architecture, and its public codebase. Public materials are kept focused on the product and its technical boundaries rather than unpublished operational details.
+Rampart is open source under the Apache 2.0 license. Public repository materials describe the product, its architecture, and its technical boundaries without exposing private operational context.
 
 ## License
 
