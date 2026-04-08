@@ -53,7 +53,7 @@ This threat model is intentionally scoped to the local product and its immediate
 - the enforcement engine is the source of truth for what was technically blocked or allowed
 - product policy is only meaningful if it maps to verified platform capabilities
 - local logs are sensitive operational records and should stay local by default
-- macOS and Linux do not necessarily provide equivalent enforcement or observability
+- Windows, macOS, and Linux do not necessarily provide equivalent enforcement or observability
 
 ## Main threat scenarios
 
@@ -120,7 +120,7 @@ Desired behavior:
 
 ## Platform capability mismatch
 
-- macOS and Linux features are not guaranteed to match
+- Windows, macOS, and Linux features are not guaranteed to match
 - network monitoring and proxy behavior may differ materially
 
 ## Upstream engine dependency

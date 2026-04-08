@@ -6,7 +6,7 @@
 
 ## 1. WHAT RAMPART IS
 
-Rampart is a desktop application (macOS + Linux) that sandboxes AI coding agents at the kernel level, enforcing filesystem, network, and syscall boundaries so agents like Claude Code, Cursor, Codex, and Aider can only access what you explicitly allow per project.
+Rampart is a desktop application built Windows-first that sandboxes AI coding agents at the kernel level, enforcing filesystem, network, and process boundaries so agents like Claude Code, Cursor, Codex, and Aider can only access what you explicitly allow per project.
 
 **One-sentence pitch:**  
 Rampart is a firewall for AI coding agents — kernel-enforced, not prompt-enforced.
@@ -15,7 +15,7 @@ Rampart is a firewall for AI coding agents — kernel-enforced, not prompt-enfor
 Every AI coding agent you run inherits your full operating system permissions. It can read your `.env` files, your SSH keys, your production credentials, and your entire home directory. It can make outbound network calls to any domain. When something goes wrong — a hallucinated command, a prompt injection, a runaway agent — most teams have no audit log of what was touched and no reliable way to stop it. 60% of organizations cannot terminate a misbehaving agent once it starts running.
 
 **What Rampart does technically:**  
-Rampart wraps the greywall open-source sandboxing engine (Apache 2.0, GreyhavenHQ/greywall) with a developer-friendly GUI, team policy management, persistent audit logging, and a kill switch. The enforcement layer is at the kernel level — not a behavioral prompt, not a suggestion, not a wrapper that the agent can reason around. Landlock (Linux), Bubblewrap namespaces (Linux), Seccomp BPF (Linux), eBPF monitoring (Linux), and Apple Seatbelt (macOS) enforce access rules before the agent process can act.
+Rampart wraps kernel-level enforcement with a developer-friendly GUI, team policy management, persistent audit logging, and a kill switch. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means Rampart cannot assume the same runtime is the primary engine on every platform. The enforcement layer is at the kernel or OS boundary — not a behavioral prompt, not a suggestion, and not a wrapper the agent can reason around.
 
 ---
 
@@ -60,8 +60,8 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 | Local storage | SQLite via `tauri-plugin-sql` | Session logs, profiles, settings — all local, no cloud required for free tier |
 | Team backend | Fly.io (single instance, Postgres) | Lightweight, cheap, EU region available for data residency |
 | License | Apache 2.0 | Matches greywall license, enables enterprise use, builds developer trust |
-| Platforms | macOS first, Linux second | Most developers are on macOS; Linux needed for CI/headless mode |
-| Windows | Not in scope until Year 2 | Requires completely different sandboxing architecture — AppContainer/Job Objects |
+| Platforms | Windows first, macOS and Linux following | Windows is the primary product constraint and must shape the execution model |
+| macOS/Linux | Follow after the Windows execution model is solid | `greywall` remains the reference adapter path on those platforms |
 
 ---
 
@@ -165,7 +165,7 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 
 - Does not intercept or modify agent prompts or completions (that is a different product)
 - Does not provide model-level guardrails or content filtering
-- Does not work on Windows (deferred, different architecture required)
+- Does not yet claim cross-platform parity; Windows, macOS, and Linux may require different enforcement runtimes and capabilities
 - Does not sandbox agents running inside Docker containers (greywall operates on host processes)
 - Does not provide network filtering on macOS in v1 (greyproxy transparent proxying is Linux-only — macOS gets env-var-based SOCKS5 only)
 - Does not store any code, prompts, or completions in the cloud — audit logs contain only filesystem paths, network domains, and metadata

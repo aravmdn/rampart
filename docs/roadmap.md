@@ -12,7 +12,7 @@ This roadmap reflects the current product reference document while keeping the p
 ## Phase 1: Local desktop MVP
 
 - Tauri desktop shell
-- macOS and Linux support through the initial `greywall` adapter
+- Windows-first engine path and product workflow
 - Project picker, agent picker, and profile templates
 - One-click sandboxed session launch
 - Live session state and violation stream
@@ -66,6 +66,6 @@ Outcome:
 
 ## Platform note
 
-- macOS and Linux are the current v1 platforms
-- Windows remains a future platform that will require a separate enforcement approach
+- Windows is the current v1 platform direction
+- macOS and Linux follow after the Windows execution model is solid
 - public roadmap language must stay explicit about capability differences across OSes

@@ -4,7 +4,7 @@
 
 Rampart is a local-first blast-radius limiter for AI coding agents. It lets developers launch supported agents inside a constrained execution environment, observe blocked and allowed activity, and refine policy without editing low-level sandbox syntax.
 
-This document describes the product architecture reflected by the current PRD: desktop-first on macOS and Linux, `greywall` as the initial enforcement adapter, and a product boundary that preserves room for future runtimes.
+This document describes the product architecture reflected by the current product direction: Windows-first desktop delivery, a replaceable enforcement layer, and `greywall` retained as a reference adapter for macOS/Linux rather than the product's primary runtime assumption.
 
 ## Product scope
 
@@ -29,9 +29,9 @@ Rampart is not intended to be:
 | UI stack | TypeScript + React | Fast UI iteration for onboarding, session view, and policy editing |
 | Local orchestration | Rust | Strong fit for process management, engine integration, and reliability |
 | Persistence | SQLite | Local-first storage for sessions, alerts, profiles, and settings |
-| Initial enforcement path | `greywall` via adapter | Treat as a binary dependency, not an imported library |
-| Supported platforms in v1 | macOS and Linux | Capability differences must be surfaced in product behavior |
-| Windows strategy | Deferred | Requires a separate enforcement model and should not be implied by current docs |
+| Initial enforcement path | Windows-first runtime behind an engine abstraction | The product model cannot assume `greywall` is the Windows path |
+| macOS/Linux enforcement path | `greywall` via adapter | Treat as a binary dependency, not an imported library |
+| Supported platforms in v1 | Windows first | Capability differences must be surfaced in product behavior |
 
 ## Repo architecture
 
@@ -147,9 +147,10 @@ Design rule:
 
 ## 5. Enforcement engine
 
-Initial engine:
+Initial engine strategy:
 
-- `greywall` as the current macOS/Linux execution engine
+- Windows-first delivery means the primary runtime may differ from `greywall`
+- `greywall` remains the current reference engine for macOS/Linux paths
 
 Rampart treats the engine as:
 
@@ -159,6 +160,7 @@ Rampart treats the engine as:
 
 This matters because platform behavior is not identical. For example:
 
+- Windows will require different enforcement primitives than macOS/Linux
 - Linux may support richer network capture or blocking paths than macOS
 - temporary files and rename flows may behave differently from the user's intent
 - unsupported rules must be rejected or downgraded explicitly
@@ -241,38 +243,40 @@ Representative session fields:
 
 ## Platform model
 
+## Windows
+
+Priority:
+
+- primary target platform
+- first platform that product workflows should feel complete on
+
+Rules:
+
+- keep the enforcement layer abstract enough that the Windows runtime is not coupled to macOS/Linux assumptions
+- do not defer core product workflows behind non-Windows engine work
+
 ## macOS
 
 Priority:
 
-- first supported desktop platform in v1
+- second-wave platform after the Windows model is validated
 
 Rules:
 
 - document network limitations clearly
-- never imply Linux-equivalent observability unless verified
+- never imply parity with Windows or Linux unless verified
 
 ## Linux
 
 Priority:
 
-- second supported desktop platform in v1
-- foundation for later headless and CI support
+- second-wave platform after Windows
+- likely strongest benchmark for deep enforcement and later headless/CI flows
 
 Rules:
 
-- use Linux as the richer capability baseline where justified
+- use Linux as the richest low-level capability benchmark where justified
 - document filesystem and rename limitations clearly
-
-## Windows
-
-Status:
-
-- not in v1 scope
-
-Rule:
-
-- keep the enforcement layer abstract enough that a Windows-specific runtime can be added later without reworking the product model
 
 ## Security model
 

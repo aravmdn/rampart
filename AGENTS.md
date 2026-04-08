@@ -8,20 +8,20 @@
 ## Product definition
 - Primary problem: AI coding agents currently inherit broad user permissions and can expand blast radius across code, secrets, credentials, and network access.
 - Initial target users: individual developers and small engineering teams using tools like Claude Code, Codex, Cursor, Copilot, Aider, Goose, and OpenCode.
-- Initial market wedge: macOS and Linux developers first through a desktop app that makes kernel-level agent sandboxing usable.
+- Initial market wedge: Windows desktop developers first, with macOS and Linux following after the Windows execution model is solid.
 - Product position: a policy and visibility layer around agent execution, not another code-review bot and not a generic LLM firewall.
 
 ## Non-goals
 - Do not add cloud dependency to the free tier.
 - Do not turn this into a generic observability platform.
 - Do not build team admin, SSO, SOC2-heavy workflows, or browser dashboards before the local enforcement loop is solid.
-- Do not imply Windows support before a separate Windows enforcement architecture exists.
+- Do not let macOS/Linux reference paths displace the Windows-first product direction.
 
 ## Architecture guardrails
 - Prefer local-first architecture.
 - Enforce security controls outside model prompts. Prefer OS/kernel primitives, wrappers, allowlists, and deterministic checks over prompt instructions.
-- Treat the enforcement engine as replaceable. `greywall` is the initial reference implementation for macOS/Linux, but the product cannot assume it will always be the only runtime.
-- Preserve an engine abstraction so the repo can later support a maintained fork or alternate runtimes.
+- Treat the enforcement engine as replaceable. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means the product cannot assume `greywall` is the only or primary runtime.
+- Preserve an engine abstraction so the repo can later support alternate runtimes or a maintained fork.
 - The first valuable loop is:
   1. choose project + agent + profile
   2. launch sandboxed session
@@ -49,7 +49,7 @@
 - Phase 0: repo scaffolding, architecture docs, threat model, capability boundaries, product language.
 - Phase 1: local desktop shell, project picker, agent/profile picker, launch sandboxed session, event stream UI.
 - Phase 2: profile editing, reusable presets, local session history, violation explanations, safe policy refinement.
-- Phase 3: team features behind clear boundaries: shared policies, audit aggregation, alerts, kill switch workflows.
+- Phase 3: team features behind clear boundaries: shared policies, signed profile distribution, centralized audit sync, org settings.
 - Phase 4: CI and headless modes, broader engine support, enterprise controls where justified.
 
 ## Cross-domain workflows
@@ -87,7 +87,7 @@
 - Public artifacts should describe the product, not the founder's private working process.
 - Never imply protection that is not actually enforced on the current OS and engine.
 - If macOS and Linux capabilities differ, surface that difference in both product behavior and docs.
-- If future Windows support differs materially, surface that difference in product behavior and public docs without disclosing internal implementation shortcuts.
+- If Windows, macOS, and Linux capabilities differ, surface that difference in product behavior and public docs without disclosing internal implementation shortcuts or private roadmap reasoning.
 - Be precise about limitations around temporary files, atomic writes, rename semantics, proxying, and engine coverage.
 - Prefer open formats and auditable logic. Users must be able to understand why the product blocked something.
 
@@ -109,9 +109,9 @@
 - For sandbox behavior, include at least one negative-path test or manual repro for blocked access.
 
 ## Product strategy context
-- The strongest near-term wedge is agent blast-radius control for developers and small teams through a local desktop product.
+- The strongest near-term wedge is agent blast-radius control for developers and small teams, starting on Windows where agent adoption and enterprise desktop presence are high.
 - The defensible product is not just a sandbox binary; it is usable policy management, visibility, trust, and workflow fit.
-- The fastest route to usefulness is local desktop UX over real enforcement primitives, with honest documentation of platform-specific capability gaps.
+- The fastest route to usefulness is local desktop UX over real enforcement primitives, with Windows support treated as a first-class design constraint.
 
 ## Git workflow
 - Always commit completed changes unless the user explicitly asks not to.

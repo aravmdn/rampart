@@ -2,7 +2,7 @@
 
 Rampart is a local-first security control plane for AI coding agents.
 
-It runs supported agents inside an enforced sandbox and gives developers a usable view of what was allowed, what was blocked, and why. The initial product focus is a desktop experience for macOS and Linux, with the enforcement layer kept replaceable so future runtimes, including Windows-specific paths, can be added without redesigning the product.
+It runs supported agents inside an enforced sandbox and gives developers a usable view of what was allowed, what was blocked, and why. The initial product focus is a Windows-first desktop experience, with the enforcement layer kept replaceable so macOS and Linux support can follow without redesigning the product.
 
 ## Why It Exists
 
@@ -39,14 +39,14 @@ Rampart is currently documented around:
 
 - desktop application built with Tauri
 - Rust-based local orchestration and policy services
-- `greywall` as the initial macOS/Linux engine adapter
+- a replaceable enforcement layer, with `greywall` retained as a reference adapter for macOS/Linux
 - free tier without required cloud dependency
 - team features added only after the core local enforcement loop is solid
 
 Current limitations are intentional:
 
-- Windows is not a v1 target because it requires a different enforcement runtime
-- macOS and Linux do not have identical capability coverage
+- Windows is the v1 target platform and should have the strongest product workflow coverage
+- macOS and Linux may not have identical capability coverage as those paths mature
 - network observability and blocking may differ by platform and engine support
 
 ## Architecture
