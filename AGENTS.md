@@ -81,8 +81,11 @@
   - enforcement
   - observability
   - policy authoring
+- Treat the repository as public-facing. Do not expose private strategy, personal goals, internal planning notes, unpublished operational details, private markdown files, secrets, credentials, local-only paths, or hidden collaboration context in code, docs, commits, PR text, issues, or generated assets.
+- Public artifacts should describe the product, not the founder's private working process.
 - Never imply protection that is not actually enforced on the current OS.
 - If macOS and Linux capabilities differ, surface that difference in both product behavior and docs.
+- If Windows, macOS, and Linux capabilities differ, surface that difference in product behavior and public docs without disclosing internal implementation shortcuts or private roadmap reasoning.
 - Be precise about limitations around temporary files, atomic writes, rename semantics, proxying, and engine coverage.
 - Prefer open formats and auditable logic. Users must be able to understand why the product blocked something.
 
@@ -91,6 +94,7 @@
 - Record key product decisions as ADRs once implementation begins.
 - When making architecture changes, update `docs/architecture.md` and this file together.
 - When the repository is updated in a way that changes product direction, architecture, module boundaries, workflow, or developer-facing setup, update `AGENTS.md` and `README.md` in the same body of work.
+- Keep public documentation official in tone. Do not publish internal execution notes, personal planning details, private prompts, or tactical build instructions unless the user explicitly wants them public.
 - Do not create deep docs sprawl early; prefer a few high-signal docs.
 
 ## Verification guidance

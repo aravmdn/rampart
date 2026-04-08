@@ -2,32 +2,22 @@
 
 Rampart is a local-first blast-radius limiter for AI coding agents.
 
-It is being designed as a developer-first security product that launches tools like Claude Code, Codex, Cursor, Copilot, Aider, Goose, and OpenCode inside a least-privilege environment, then shows what was blocked, what was allowed, and why.
+Rampart is a developer-first security product for running AI coding agents inside controlled execution boundaries, with clear visibility into attempted access and policy outcomes.
 
-## Product direction
+## Overview
 
 Rampart exists to solve an execution-layer problem:
 - AI coding agents inherit broad user permissions by default.
 - Most teams do not have deterministic controls over what those agents can read, write, or call.
 - Existing products skew toward review, gateways, or enterprise governance rather than local enforcement for day-to-day developer workflows.
 
-The initial product wedge is:
+Rampart is intended for:
 - Windows developers first
 - macOS and Linux developers second
 - individual users and small engineering teams
 - local-first enforcement, visibility, and policy control
 
-## Current repo status
-
-This repository is in the foundation stage.
-
-The current focus is:
-- define the architecture
-- define the agent operating instructions
-- scaffold the repo around the intended system boundaries
-- prepare for implementation of the local MVP
-
-## Planned architecture
+## Architecture
 
 ```text
 rampart/
@@ -65,28 +55,21 @@ rampart/
 | `packages/shared-ui` | Shared UI primitives and domain-facing components |
 | `docs` | Architecture, roadmap, threat model, ADRs |
 
-## Docs
+## Documentation
 
 - [Root agent instructions](C:\projects\rampart\AGENTS.md)
 - [Architecture](C:\projects\rampart\docs\architecture.md)
 - [Roadmap](C:\projects\rampart\docs\roadmap.md)
 - [Threat model](C:\projects\rampart\docs\threat-model.md)
 
-## Working rules
+## Design principles
 
 - Keep the product local-first.
-- Keep free-tier functionality usable without cloud dependency.
+- Keep core usage viable without mandatory cloud dependency.
 - Preserve an engine adapter boundary instead of binding the product to one enforcement implementation.
-- Treat Windows as the primary target platform for the first useful product loop.
+- Treat Windows as the primary target platform.
 - Be explicit about platform limitations.
-- Do not expand into generic AI governance before the local enforcement loop is compelling.
-
-## Next build steps
-
-1. Scaffold the desktop app shell.
-2. Define the daemon and policy schemas.
-3. Add the greywall adapter boundary.
-4. Build the first end-to-end local session loop.
+- Focus on execution-layer control rather than generic AI governance.
 
 ## License
 
