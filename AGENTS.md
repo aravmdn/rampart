@@ -95,6 +95,7 @@
 - Keep architecture and product reasoning in `docs/`.
 - Record key product decisions as ADRs once implementation begins.
 - When making architecture changes, update `docs/architecture.md` and this file together.
+- Keep business model, packaging, and scalability decisions in `docs/business-model.md`.
 - When the repository is updated in a way that changes product direction, architecture, module boundaries, workflow, or developer-facing setup, update `AGENTS.md` and `README.md` in the same body of work.
 - Keep public documentation official in tone. Do not publish internal execution notes, personal planning details, private prompts, or tactical build instructions unless the user explicitly wants them public.
 - Do not create deep docs sprawl early; prefer a few high-signal docs.
@@ -111,6 +112,7 @@
 ## Product strategy context
 - The strongest near-term wedge is agent blast-radius control for developers and small teams, starting on Windows where agent adoption and enterprise desktop presence are high.
 - The defensible product is not just a sandbox binary; it is usable policy management, visibility, trust, and workflow fit.
+- The open-source local product is the adoption layer. The primary paid layer is the hosted team control plane: aggregated audit visibility, hosted policy coordination, alerts, and enterprise-ready controls.
 - The fastest route to usefulness is local desktop UX over real enforcement primitives, with Windows support treated as a first-class design constraint.
 
 ## Git workflow

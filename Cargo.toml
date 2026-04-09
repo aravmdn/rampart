@@ -1,0 +1,12 @@
+[workspace]
+members = [
+  "crates/rampartd",
+  "crates/policy-core",
+  "crates/engine-greywall",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+

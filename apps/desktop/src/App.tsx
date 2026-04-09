@@ -150,9 +150,7 @@ function App() {
           UI shows launch choices, capability gaps, audit stream, and blocked action explanation.
           Command construction stays outside view layer and stays daemon-owned.
         </p>
-        <p className="muted">
-          Mock API names for Task 3 sync: {Object.values(TASK3_API_NAMES).join(", ")}
-        </p>
+        <p className="muted">Mock API names for Task 3 sync: {Object.values(TASK3_API_NAMES).join(", ")}</p>
       </section>
 
       <div className="columns">

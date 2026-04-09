@@ -8,6 +8,7 @@
 - architecture
 - roadmap
 - threat model
+- business model
 - ADRs
 
 ## Conventions

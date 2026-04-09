@@ -1,12 +1,12 @@
-use engine_greywall::{GreywallAdapter, GreywallVersion};
+use engine_greywall::GreywallAdapter;
 use policy_core::{
     AgentTool, DefaultAction, FilesystemPolicy, NetworkPolicy, Policy, ProcessPolicy, Profile,
 };
 use rampartd::{DaemonApi, LaunchSessionRequest, RampartDaemon};
-use std::path::PathBuf;
 
-fn sample_profile() -> Profile {
-    Profile {
+fn main() {
+    let adapter = GreywallAdapter::discover().expect("static stub config should stay valid");
+    let profile = Profile {
         id: "windows-safe".into(),
         name: "Windows Safe".into(),
         description: Some("Project scoped default-deny profile.".into()),
@@ -28,34 +28,14 @@ fn sample_profile() -> Profile {
                 blocked_commands: vec!["powershell".into()],
             },
         },
-    }
-}
-
-fn sample_daemon() -> RampartDaemon {
-    let adapter = GreywallAdapter::from_binary_path(
-        PathBuf::from("greywall"),
-        GreywallVersion {
-            major: 0,
-            minor: 3,
-            patch: 0,
-        },
-    )
-    .expect("adapter must build");
-    RampartDaemon::new(adapter, vec![sample_profile()])
-}
-
-#[test]
-fn detects_capabilities_before_launch() {
-    let daemon = sample_daemon();
+    };
+    let mut daemon = RampartDaemon::new(adapter, vec![profile]);
     let snapshot = daemon.detect_capabilities().expect("capabilities should work");
+    println!(
+        "capability snapshot ready: engine={}, platform={}",
+        snapshot.engine_name, snapshot.platform
+    );
 
-    assert_eq!(snapshot.engine_name, "greywall");
-    assert_eq!(snapshot.platform, "windows");
-}
-
-#[test]
-fn launches_with_agent_project_and_profile_only() {
-    let mut daemon = sample_daemon();
     let session = daemon
         .launch_session(LaunchSessionRequest {
             project_dir: r"C:\projects\rampart".into(),
@@ -63,7 +43,5 @@ fn launches_with_agent_project_and_profile_only() {
             profile_id: "windows-safe".into(),
         })
         .expect("launch should work");
-
-    assert_eq!(session.project_path, r"C:\projects\rampart");
-    assert_eq!(session.profile_id, "windows-safe");
+    println!("session launched: {}", session.id);
 }

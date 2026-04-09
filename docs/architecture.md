@@ -4,7 +4,7 @@
 
 Rampart is a local-first blast-radius limiter for AI coding agents. It lets developers launch supported agents inside a constrained execution environment, observe blocked and allowed activity, and refine policy without editing low-level sandbox syntax.
 
-This document describes the product architecture reflected by the current product direction: Windows-first desktop delivery, a replaceable enforcement layer, and `greywall` retained as a reference adapter for macOS/Linux rather than the product's primary runtime assumption.
+This document describes the product architecture reflected by the current product direction: Windows-first desktop delivery, a replaceable enforcement layer, `greywall` retained as a reference adapter for macOS/Linux rather than the product's primary runtime assumption, and a hosted control plane reserved for team and enterprise workflows rather than for the core individual product.
 
 ## Product scope
 
@@ -29,6 +29,7 @@ Rampart is not intended to be:
 | UI stack | TypeScript + React | Fast UI iteration for onboarding, session view, and policy editing |
 | Local orchestration | Rust | Strong fit for process management, engine integration, and reliability |
 | Persistence | SQLite | Local-first storage for sessions, alerts, profiles, and settings |
+| Hosted control plane | Optional, separate service | Team audit aggregation, hosted policy coordination, alerts, admin workflows |
 | Initial enforcement path | Windows-first runtime behind an engine abstraction | The product model cannot assume `greywall` is the Windows path |
 | macOS/Linux enforcement path | `greywall` via adapter | Treat as a binary dependency, not an imported library |
 | Supported platforms in v1 | Windows first | Capability differences must be surfaced in product behavior |
@@ -103,6 +104,7 @@ Responsibilities:
 - collect, normalize, and persist events
 - stream live session updates to the UI
 - own capability detection and diagnostics
+- provide a clean bridge to any later hosted sync surfaces without moving enforcement into the cloud
 
 Why it exists:
 
@@ -210,7 +212,8 @@ Success conditions:
 
 Later extension:
 
-- repository-backed team policy import/export through `.rampart/policy.json`
+- repository-backed policy import/export through `.rampart/policy.json`
+- optional hosted policy distribution and review for paid team workflows
 
 ## Data model
 
@@ -311,6 +314,8 @@ Local-first observability should include:
 
 The purpose is operational trust, not generic analytics.
 
+Hosted observability, when enabled for paid teams, should aggregate metadata across users without becoming a dependency for the core single-user enforcement loop.
+
 ## Known technical risks
 
 ## 1. Atomic write and rename behavior
@@ -391,8 +396,8 @@ Response:
 
 - local alerts
 - persistent audit history
-- team policy import/export
-- team sync boundaries
+- repository-backed policy import/export
+- hosted team sync boundaries
 
 ## Phase 4
 

@@ -63,6 +63,7 @@ Additional detail:
 - [Architecture](C:\projects\rampart\docs\architecture.md)
 - [Threat model](C:\projects\rampart\docs\threat-model.md)
 - [Roadmap](C:\projects\rampart\docs\roadmap.md)
+- [Business model and scalability](C:\projects\rampart\docs\business-model.md)
 
 ## Repository Structure
 
@@ -84,12 +85,13 @@ rampart/
 - [Architecture](C:\projects\rampart\docs\architecture.md)
 - [Threat model](C:\projects\rampart\docs\threat-model.md)
 - [Roadmap](C:\projects\rampart\docs\roadmap.md)
+- [Business model and scalability](C:\projects\rampart\docs\business-model.md)
 - [Workspace ADR](C:\projects\rampart\docs\adr\0001-workspace-layout.md)
 - [Product reference document](C:\projects\rampart\docs\PRD.md)
 
 ## Open Source
 
-Rampart is open source under the Apache 2.0 license. Public repository materials describe the product, its architecture, and its technical boundaries without exposing private operational context.
+Rampart is open source under the Apache 2.0 license. The local single-user product is intended to remain usable without any required cloud dependency. Paid plans are centered on hosted team coordination features such as aggregated audit views, policy distribution, alerts, and procurement-ready controls rather than on charging for access to the local sandbox itself.
 
 ## License
 

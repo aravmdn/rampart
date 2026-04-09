@@ -15,7 +15,7 @@ Rampart is a firewall for AI coding agents — kernel-enforced, not prompt-enfor
 Every AI coding agent you run inherits your full operating system permissions. It can read your `.env` files, your SSH keys, your production credentials, and your entire home directory. It can make outbound network calls to any domain. When something goes wrong — a hallucinated command, a prompt injection, a runaway agent — most teams have no audit log of what was touched and no reliable way to stop it. 60% of organizations cannot terminate a misbehaving agent once it starts running.
 
 **What Rampart does technically:**  
-Rampart wraps kernel-level enforcement with a developer-friendly GUI, team policy management, persistent audit logging, and a kill switch. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means Rampart cannot assume the same runtime is the primary engine on every platform. The enforcement layer is at the kernel or OS boundary — not a behavioral prompt, not a suggestion, and not a wrapper the agent can reason around.
+Rampart wraps kernel-level enforcement with a developer-friendly GUI, repository-friendly policy workflows, persistent audit logging, and a kill switch. Paid plans add a hosted team control plane for aggregated audit visibility, hosted policy coordination, alerts, and enterprise operating controls. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means Rampart cannot assume the same runtime is the primary engine on every platform. The enforcement layer is at the kernel or OS boundary — not a behavioral prompt, not a suggestion, and not a wrapper the agent can reason around.
 
 ---
 
@@ -44,7 +44,7 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 - **Months 1–3:** Developer adoption via HN, OSS community, Reddit. Target: 300–500 installs, 5–10 paying teams.
 - **Months 4–6:** Team features unlock engineering manager buyers. GitHub Action distribution. Target: 1,000+ installs, $2,000–$5,000 MRR.
 - **Months 7–12:** Enterprise pilots via direct outreach. Content/SEO compounds. SOC2 audit in progress. Target: $10,000–$30,000 MRR, first enterprise contract at $500–$2,000/month.
-- **Year 2:** Windows support, CI-first enterprise offering, possible pre-seed raise ($500K–$1M is realistic with traction). Comparable OSS-led devtools like GitGuardian, Snyk, and Sourcegraph all scaled through this exact path.
+- **Year 2:** broader platform support beyond the initial Windows-first release, CI-first enterprise offering, possible pre-seed raise ($500K–$1M is realistic with traction). Comparable OSS-led devtools like GitGuardian, Snyk, and Sourcegraph all scaled through this exact path.
 
 ---
 
@@ -58,7 +58,7 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 | Sandboxing engine | greywall binary (bundled) | Apache 2.0, proven kernel-level enforcement, covers Linux + macOS |
 | greywall integration | Wrap binary via `std::process::Command` | Do not import as a library — keep greywall updates independent of Rampart releases |
 | Local storage | SQLite via `tauri-plugin-sql` | Session logs, profiles, settings — all local, no cloud required for free tier |
-| Team backend | Fly.io (single instance, Postgres) | Lightweight, cheap, EU region available for data residency |
+| Team backend | Fly.io (single instance, Postgres) | Optional hosted control plane for team and enterprise features |
 | License | Apache 2.0 | Matches greywall license, enables enterprise use, builds developer trust |
 | Platforms | Windows first, macOS and Linux following | Windows is the primary product constraint and must shape the execution model |
 | macOS/Linux | Follow after the Windows execution model is solid | `greywall` remains the reference adapter path on those platforms |
@@ -98,8 +98,8 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 - First-run onboarding flow: 3 screens maximum
 
 **F2.2 — Stripe billing integration**
-- Free tier: full local sandboxing, single user, no cloud
-- Team tier ($15/seat/month): shared profiles, audit log aggregation, kill switch alerts
+- Free tier: full local sandboxing, local audit history, repository-backed policy files, no required cloud
+- Team tier ($15/seat/month): hosted audit aggregation, hosted policy coordination, remote alerts, manager visibility
 - Stripe Checkout embedded — no custom billing page needed initially
 
 ### Phase 3 — Team features (Weeks 9–12): The features managers pay for
@@ -123,11 +123,11 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 - Suspicious activity threshold: if blocked action count exceeds N in a session, prompt user to terminate
 - Alert log: all triggered alerts stored in SQLite
 
-**F3.4 — Team policy sync**
+**F3.4 — Repository policy workflows and team coordination**
 - Export: serialize all project profiles to `.rampart/policy.json` in working directory
 - Import: read `.rampart/policy.json` on app startup, apply profiles automatically
-- Policy-as-code: commit `.rampart/policy.json` to git → whole team gets same policy on pull
-- Team dashboard (web, Fly.io): aggregated session view across all team members, flag counts, recent blocked actions
+- Policy-as-code: commit `.rampart/policy.json` to git → whole team gets the same baseline policy on pull
+- Hosted team features build on top of this baseline with aggregated session view, manager visibility, and hosted coordination flows
 
 ### Phase 4 — Distribution growth (Weeks 13–16): GitHub Action + content
 
@@ -238,20 +238,21 @@ Rampart is for engineering teams, not enterprise security teams. It solves the p
 - All 8 project profile templates
 - Real-time session view
 - Local session history (last 30 days)
+- Repository-backed policy import/export via `.rampart/policy.json`
 - No cloud connectivity, no account required
 
 **Team tier ($15/seat/month, min 3 seats = $45/month minimum):**
 - Everything in free tier
-- Team policy sync via `.rampart/policy.json`
 - Web dashboard: aggregated sessions across team
+- Hosted policy coordination, review, and distribution
 - Kill switch with remote trigger from dashboard
 - Audit log export (JSON, CSV)
 - 90-day session history
 - Email alerts for policy violations
-- SSO (Google Workspace, Okta)
 
 **Enterprise (custom pricing, starts ~$500/month for 20+ seats):**
 - Everything in team tier
+- SSO (Google Workspace, Okta)
 - SOC2 Type II report
 - Custom data retention policy
 - EU data residency option
@@ -459,9 +460,9 @@ This is the authoritative build sequence. Each week has a goal, specific tasks, 
 
 ---
 
-### WEEK 8 — Team policy sync (v0.2.0)
+### WEEK 8 — Repository policy workflows (v0.2.0)
 
-**Goal:** A team of 10 developers can all use the same Rampart profiles, managed via a file in their shared git repository.
+**Goal:** A team of 10 developers can all use the same Rampart baseline profiles, managed via a file in their shared git repository without requiring the hosted product.
 
 **Tasks:**
 - Policy serialization: serialize all project profiles for a given directory to `.rampart/policy.json` in that directory. Format:
@@ -481,7 +482,7 @@ This is the authoritative build sequence. Each week has a goal, specific tasks, 
 - "Export team policy" button in project settings panel
 - "Import from repository" button — also supports URL (e.g., raw GitHub URL) for teams who don't want to commit the file
 - Conflict resolution: if local profile differs from policy.json, show diff and ask which to use
-- Ship v0.2.0: update README, update CHANGELOG, email team tier customers directly about the new feature
+- Ship v0.2.0: update README, update CHANGELOG, and announce the new repository-backed workflow to users
 
 **Output checkpoint:** Add `.rampart/policy.json` to a test git repo. Pull the repo on a second machine (or second user account). Open Rampart — it detects and imports the policy automatically.
 
@@ -577,7 +578,7 @@ This is the authoritative build sequence. Each week has a goal, specific tasks, 
 - Optimize the most-used paths: the profile picker and session start flow get used every single session — make them fast and frictionless.
 
 **Week 19:**
-- Windows decision: only proceed if 20+ paying customers have explicitly requested it and you have evidence it is blocking conversions. If yes, research AppContainer and Windows Job Objects. If no, publish "Windows roadmap: vote here" on GitHub Discussions.
+- Non-Windows expansion decision: only proceed if 20+ paying customers have explicitly requested deeper macOS/Linux coverage and you have evidence it is blocking conversions. If yes, prioritize the next platform/runtime investment. If no, keep tightening the Windows-first loop and publish the platform roadmap transparently.
 - Funding decision: with $3,000+ MRR, an enterprise contract, and the $392M RSAC 2026 agentic security funding signal, a $500K–$1M pre-seed from angels is realistic. Evaluate: do you want to raise? Does it accelerate the roadmap meaningfully? Could you grow to $10K MRR without it?
 
 **Week 20:**

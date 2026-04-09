@@ -27,6 +27,7 @@ Outcome:
 - Safer profile editing without raw engine syntax
 - Persistent local session history
 - Clearer violation explanations and diagnostics
+- Repository-backed policy import/export for local and team git workflows
 
 Outcome:
 
@@ -34,14 +35,15 @@ Outcome:
 
 ## Phase 3: Team-ready local controls
 
-- Export and import of repository-backed policy files
+- Hosted team dashboard and aggregated audit view
+- Hosted policy coordination and member workflows
 - Local alerts and suspicious-activity thresholds
 - Kill switch workflows
 - Team-oriented audit and policy sharing boundaries
 
 Outcome:
 
-- small teams can standardize local agent controls without requiring a cloud-first product
+- small teams can standardize local controls for free, and paid teams can add hosted coordination without changing the local-first core
 
 ## Phase 4: Headless and CI surfaces
 
@@ -62,7 +64,7 @@ Outcome:
 
 Outcome:
 
-- the product can support paid team and enterprise deployments without compromising the local-first free tier
+- the product can support paid team and enterprise deployments without compromising the local-first free tier or charging for the basic local sandbox
 
 ## Platform note
 

@@ -1,0 +1,13 @@
+{
+  "name": "rampart-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "build": "pnpm -C packages/shared-ui build && pnpm -C apps/desktop build",
+    "build:desktop": "pnpm -C apps/desktop build",
+    "build:shared-ui": "pnpm -C packages/shared-ui build",
+    "dev:desktop": "pnpm -C apps/desktop dev"
+  }
+}
+
