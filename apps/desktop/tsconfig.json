@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "vite/client",
+      "vitest/globals",
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@rampart/shared-ui": [
+        "../../packages/shared-ui/src/index.ts"
+      ]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

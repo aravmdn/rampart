@@ -1,0 +1,24 @@
+.rampart-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.rampart-badge--info {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.rampart-badge--warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.rampart-badge--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
