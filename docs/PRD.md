@@ -17,6 +17,12 @@ Every AI coding agent you run inherits your full operating system permissions. I
 **What Rampart does technically:**  
 Rampart wraps kernel-level enforcement with a developer-friendly GUI, repository-friendly policy workflows, persistent audit logging, and a kill switch. Paid plans add a hosted team control plane for aggregated audit visibility, hosted policy coordination, alerts, and enterprise operating controls. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means Rampart cannot assume the same runtime is the primary engine on every platform. The enforcement layer is at the kernel or OS boundary — not a behavioral prompt, not a suggestion, and not a wrapper the agent can reason around.
 
+**How the desktop product should feel to a user:**  
+Rampart should initially feel like a local launch-and-control shell for coding-agent sessions. A user picks a repository, chooses an installed agent such as Claude Code or Codex, chooses a profile, launches the session through Rampart, watches the live blocked and allowed activity, and reviews history afterward. The product does not need to replace every agent's native interface on day one in order to be valuable.
+
+**How terminal users fit the model:**  
+Many target users will keep working in terminals. Rampart should support that reality. The desktop app is the clearest initial UX, but the product direction also includes terminal-friendly execution paths where a user runs their normal agent command through Rampart-managed policy and enforcement rather than abandoning their existing CLI habits.
+
 ---
 
 ## 2. MARKET CONTEXT AND GROWTH POTENTIAL
@@ -68,6 +74,11 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 ## 4. FEATURE SPECIFICATION — ALL PHASES
 
 ### Phase 1 — Core (Weeks 3–5): The MVP that makes greywall usable
+
+**Phase 1 UX framing**
+- The desktop app is primarily a safe launcher and live session console.
+- The user experience should center on project -> agent -> profile -> launch -> live events -> stop -> history.
+- Do not require a custom Rampart chat interface before the core launch-and-visibility loop works well.
 
 **F1.1 — One-click sandboxed session launch**
 - Detect installed agents on the system (claude, cursor, codex, aider, goose, gemini)
@@ -142,6 +153,8 @@ Greywall (GreyhavenHQ/greywall) is the best open-source implementation of kernel
 - Usage: wraps any agent command in a Rampart sandbox within a workflow step
 - Input parameters: `agent`, `profile`, `project-dir`, `max-violations`
 - Output: session-summary JSON artifact
+
+This headless mode is also strategically important for terminal-first developers. It ensures Rampart can wrap familiar agent commands instead of only serving users who want to start every session from the desktop window.
 
 ### Phase 5 — Enterprise foundation (Weeks 17–20): Compliance and first contracts
 

@@ -89,6 +89,14 @@ Responsibilities:
 - frontend shell lives in `apps/desktop/`
 - native Tauri host crate lives in `apps/desktop/src-tauri/`
 
+Product shape:
+
+- the desktop app should initially feel like a launch-and-control shell for agent sessions
+- users choose a project, choose an installed agent, choose a profile, and launch through Rampart
+- the desktop is the place to see live session state, blocked actions, explanations, and history
+- the first version should not assume Rampart replaces the agent's own UI with a fully custom chat experience
+- terminal-first users should still be considered first-class users through launch integration now and CLI/headless support later
+
 Rules:
 
 - do not construct sandbox commands in the UI
@@ -170,6 +178,18 @@ This matters because platform behavior is not identical. For example:
 - unsupported rules must be rejected or downgraded explicitly
 
 ## Core workflows
+
+## Primary desktop workflow
+
+1. User opens Rampart and sees current capability status for the machine.
+2. User selects a local repository or project.
+3. User selects an installed agent such as Claude Code, Codex, Aider, Goose, or OpenCode.
+4. User accepts a suggested profile or chooses an existing profile.
+5. User launches the session through Rampart.
+6. Desktop shows live session state, event stream, blocked action count, and explanations.
+7. User stops the session or reviews it later in local history.
+
+This workflow should drive navigation and screen design ahead of broader dashboard concepts.
 
 ## Workflow A: launch a sandboxed session
 
@@ -317,6 +337,19 @@ Local-first observability should include:
 The purpose is operational trust, not generic analytics.
 
 Hosted observability, when enabled for paid teams, should aggregate metadata across users without becoming a dependency for the core single-user enforcement loop.
+
+## Terminal-user model
+
+Rampart should support two closely related ways of working:
+
+1. Desktop-led launch
+- a user opens Rampart, picks project, agent, and profile, then launches a session
+
+2. Terminal-led execution
+- a user normally works in a terminal with tools such as Claude Code or Codex
+- Rampart later provides a CLI or headless entry point so those users can keep their workflow while still getting enforced launch, policy selection, and audit visibility
+
+The product should not force all users into a custom chat surface in order to benefit from the enforcement layer.
 
 ## Known technical risks
 

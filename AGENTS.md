@@ -10,6 +10,7 @@
 - Initial target users: individual developers and small engineering teams using tools like Claude Code, Codex, Cursor, Copilot, Aider, Goose, and OpenCode.
 - Initial market wedge: Windows desktop developers first, with macOS and Linux following after the Windows execution model is solid.
 - Product position: a policy and visibility layer around agent execution, not another code-review bot and not a generic LLM firewall.
+- Product UX position: the desktop app should initially act as a launch-and-control shell for sandboxed agent sessions, not as a requirement to replace every existing agent interface with a brand-new chat client.
 
 ## Non-goals
 - Do not add cloud dependency to the free tier.
@@ -28,6 +29,7 @@
   3. capture violations/events
   4. explain what was blocked and why
   5. allow the user to refine policy safely
+- For terminal-oriented tools such as Claude Code and Codex, assume the near-term product should let users keep using those tools while Rampart controls launch, enforcement, visibility, and history around the session.
 
 ## Target repo shape
 - Current repo is greenfield. Build toward this layout unless a later decision replaces it:
@@ -56,6 +58,7 @@
 - Desktop -> daemon:
   - Desktop should talk to the local daemon over a narrow internal API.
   - Keep command construction, process launch, and policy enforcement out of the UI layer.
+  - Desktop owns the user workflow of project selection, agent selection, profile selection, live session visibility, and history review.
 - Daemon -> engine adapter:
   - Engine adapters own binary discovery, compatibility checks, profile translation, capability reporting, and structured event conversion.
   - Adapters must fail loudly with actionable diagnostics.
@@ -77,6 +80,26 @@
 - Audit event: structured record of an allow, block, launch, exit, alert, or policy change.
 - Capability snapshot: the detected set of enforcement features available on the current engine and OS.
 
+## Desktop workflow guidance
+- Design the first-run experience around a simple sequence:
+  1. open Rampart
+  2. choose project
+  3. choose agent
+  4. choose or accept profile
+  5. launch session
+  6. watch live state and blocked actions
+  7. stop session and inspect history if needed
+- The desktop app should feel closer to a safe launcher and session console than to a general-purpose security dashboard.
+- Live session view and history are core product surfaces, not optional polish.
+- Policy editing should happen in product language, not raw engine syntax.
+- Capability differences and enforcement limits must be visible before the user starts a session, not buried in settings.
+
+## Terminal integration guidance
+- Rampart should integrate cleanly with terminal-first agent users.
+- Do not assume all users want to converse with agents inside a custom Rampart chat surface.
+- Near-term support can include launching installed terminal tools from the desktop app and later exposing a CLI or headless `rampart run ... -- <agent command>` workflow.
+- For Claude Code, Codex, Aider, Goose, OpenCode, and similar tools, the product value is enforced launch plus visibility, not replacing their core UX on day one.
+
 ## Security and trust rules
 - Default-deny is the baseline posture.
 - Explicitly separate:
@@ -97,6 +120,7 @@
 - When making architecture changes, update `docs/architecture.md` and this file together.
 - Keep business model, packaging, and scalability decisions in `docs/business-model.md`.
 - When the repository is updated in a way that changes product direction, architecture, module boundaries, workflow, or developer-facing setup, update `AGENTS.md` and `README.md` in the same body of work.
+- Keep the intended user workflow explicit in docs whenever product wording changes, so future implementation work does not drift into an unintended "generic dashboard" or "replacement chat client" shape.
 - Keep public documentation official in tone. Do not publish internal execution notes, personal planning details, private prompts, or tactical build instructions unless the user explicitly wants them public.
 - Do not create deep docs sprawl early; prefer a few high-signal docs.
 
