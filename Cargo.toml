@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "apps/desktop/src-tauri",
   "crates/rampartd",
   "crates/policy-core",
   "crates/engine-greywall",

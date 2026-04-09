@@ -71,6 +71,7 @@ Additional detail:
 rampart/
 |- apps/
 |  `- desktop/
+|     `- src-tauri/
 |- crates/
 |  |- rampartd/
 |  |- policy-core/
@@ -79,6 +80,28 @@ rampart/
 |  `- shared-ui/
 `- docs/
 ```
+
+## Local Setup
+
+Rampart now has a real workspace skeleton for the documented modules:
+
+- Rust workspace members live in `crates/` plus `apps/desktop/src-tauri/`
+- pnpm workspace packages live in `apps/*` and `packages/*`
+- `apps/desktop` is a React + Vite shell wrapped by a Tauri app in `apps/desktop/src-tauri`
+
+Current desktop commands:
+
+- `pnpm dev:desktop` starts the Tauri desktop shell
+- `pnpm build:desktop` runs the Tauri desktop build command
+- `pnpm build:shared-ui` builds the shared UI package
+
+Desktop prerequisites on Windows:
+
+- Node + pnpm
+- Rust installed through rustup
+- Visual Studio C++ build tools available to the Rust MSVC toolchain
+
+The desktop wrapper script adds the default rustup cargo path if the shell did not inherit it. Rampart still depends on a working MSVC link environment for native Tauri builds.
 
 ## Documentation
 

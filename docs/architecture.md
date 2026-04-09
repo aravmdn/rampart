@@ -86,6 +86,8 @@ Responsibilities:
 - session history browsing
 - policy editing UX
 - alerts, tray actions, and user-visible explanations
+- frontend shell lives in `apps/desktop/`
+- native Tauri host crate lives in `apps/desktop/src-tauri/`
 
 Rules:
 
