@@ -22,6 +22,7 @@ import {
   type EngineCapabilitySnapshot,
   type ProfileSummary,
   type ProjectSummary,
+  type SessionHistoryEntry,
 } from "./daemon/contracts";
 
 function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] {
@@ -62,14 +63,17 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   });
   const [events, setEvents] = useState<EventView[]>([]);
   const [violations, setViolations] = useState<ViolationView[]>([]);
+  const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
 
   useEffect(() => {
     void (async () => {
       const launchContext = await daemonClient.loadLaunchContext();
+      const recentHistory = await daemonClient.listSessionHistory();
       setProjects(launchContext.projects);
       setAgents(launchContext.agents);
       setProfiles(launchContext.profiles);
       setSnapshot(launchContext.capabilities);
+      setHistory(recentHistory);
       setProjectId(
         launchContext.projects.find((project) => project.path === launchContext.selected.projectPath)?.id ??
           launchContext.projects[0]?.id ??
@@ -134,6 +138,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       profileId: selectedProfile.id,
     });
     const sessionEvents = await daemonClient.streamSessionEvents(launched.id ?? "");
+    const recentHistory = await daemonClient.listSessionHistory();
 
     setSession({
       id: launched.id,
@@ -158,6 +163,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
         policyRuleLabel: "Project scope guard",
       })),
     );
+    setHistory(recentHistory);
   }
 
   async function handleStop() {
@@ -165,10 +171,12 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       return;
     }
     const stopped = await daemonClient.stopSession(session.id);
+    const recentHistory = await daemonClient.listSessionHistory();
     setSession((current) => ({
       ...current,
       status: stopped.status,
     }));
+    setHistory(recentHistory);
   }
 
   return (
@@ -227,6 +235,27 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
           <SessionStatusPanel value={session} />
           <ViolationList violations={violations} />
           <EventList events={events} />
+          <section className="panel">
+            <h2>Recent History</h2>
+            {history.length === 0 ? (
+              <p className="muted">No persisted sessions yet.</p>
+            ) : (
+              <ul className="plain-list">
+                {history.map((entry) => (
+                  <li key={entry.session.id}>
+                    <strong>{entry.session.id}</strong>
+                    <div className="muted">{entry.session.projectPath}</div>
+                    {entry.events[0] ? <div>{entry.events[0].message}</div> : null}
+                    {entry.violations[0] ? (
+                      <div className="muted">
+                        Latest block: {entry.violations[0].target} ({entry.violations[0].ruleId})
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       </div>
     </main>
