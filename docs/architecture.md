@@ -68,9 +68,9 @@ Supporting architecture should therefore include:
 - The repo should not assume one engine is the permanent runtime
 - Public docs should surface limitations instead of implying unsupported protection
 
-## Reference-informed lessons
+## Research-informed lessons
 
-The Claude Code reference folder is useful to Rampart in a narrow, practical way:
+External implementation research is useful to Rampart in a narrow, practical way:
 
 - startup orchestration: do preflight work before opening an active session
 - command and mode partitioning: keep launcher, session, and later bridge states explicit
@@ -78,4 +78,4 @@ The Claude Code reference folder is useful to Rampart in a narrow, practical way
 - session lifecycle: persist enough state for history and later resume or attachment workflows
 - extension pressure: preserve seams for plugins, skills, and remote control without prioritizing them ahead of the local enforcement loop
 
-The useful takeaway is not to rebuild Claude Code. The useful takeaway is to shape Rampart so real agent complexity has a place to land later without forcing a rewrite of the launcher, daemon contracts, or policy model.
+The useful takeaway is not to rebuild any one existing agent product. The useful takeaway is to shape Rampart so real agent complexity has a place to land later without forcing a rewrite of the launcher, daemon contracts, or policy model.

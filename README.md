@@ -191,7 +191,7 @@ rampart/
 - [Workspace ADR](docs/adr/0001-workspace-layout.md)
 - [Public documentation policy](docs/public-docs-policy.md)
 
-The repository also contains a `reference/` area for architecture study. It is useful as design input for agent launch, session state, and permission modeling, but the public docs only capture the resulting product-level decisions.
+The public docs capture product-level architecture decisions and intended workflow, not the internal research inputs that informed them.
 
 ## Public Documentation Policy
 

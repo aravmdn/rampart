@@ -28,4 +28,4 @@ Rampart keeps a small public documentation set in git so contributors and users 
 - Do not store secrets, keys, passwords, tokens, or credentials in tracked files.
 - Keep implementation guidance in public docs at a product level, not as private operator instructions.
 - If a doc becomes too internal for public release, move its sensitive parts out of git instead of hiding the problem in a comment.
-- If external reference code informs the architecture, document only the reusable product or engineering lessons, not copied implementation detail.
+- If external implementation research informs the architecture, document only the reusable product or engineering lessons, not copied implementation detail.

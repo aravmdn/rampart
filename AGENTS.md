@@ -32,17 +32,16 @@
   5. allow the user to refine policy safely
 - For terminal-oriented tools such as Claude Code and Codex, assume the near-term product should let users keep using those tools while Rampart controls launch, enforcement, visibility, and history around the session.
 
-## Reference code guidance
-- The `reference/` directory may be used for architecture study and competitive implementation research.
-- Use reference code to extract patterns that help Rampart quickly, such as:
+## External research guidance
+- External implementation research may be used to extract patterns that help Rampart quickly, such as:
   - startup and preflight orchestration
   - agent-specific launch adapters
   - session state boundaries
   - permission and mode vocabulary
   - history and resume data shape
-- Do not treat reference code as something to port wholesale.
+- Do not treat external implementations as something to port wholesale.
 - Do not copy private or vendor-specific implementation detail into public docs or product claims.
-- When reference analysis changes Rampart architecture or roadmap meaningfully, update `AGENTS.md`, `README.md`, `docs/architecture.md`, and `docs/roadmap.md` together.
+- When external research changes Rampart architecture or roadmap meaningfully, update `AGENTS.md`, `README.md`, `docs/architecture.md`, and `docs/roadmap.md` together.
 
 ## Target repo shape
 - Current repo is greenfield. Build toward this layout unless a later decision replaces it:

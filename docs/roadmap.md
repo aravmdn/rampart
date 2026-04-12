@@ -30,7 +30,7 @@ Reference-driven priorities inside this phase:
 
 - Persist full session records: launch context, capability snapshot, audit trail, and violations together.
 - Add rule-linked violation explanations in product language, including platform limitation notes.
-- Add agent-aware profile presets and preflight checks keyed to Claude Code, Codex, and similar tools.
+- Add agent-aware profile presets and preflight checks keyed to supported terminal agents.
 - Define a stable event taxonomy for launch, allow, block, alert, stop, and policy-change records.
 - Treat resume and history as first-class local data, not transient UI state.
 
@@ -59,9 +59,9 @@ Reference-driven priorities inside this phase:
 - Add per-agent capability matrices and compatibility checks so broader support does not weaken the core contract.
 - Consider plugin and extension points only after Windows launch, enforcement, and explanation loops are trustworthy.
 
-## What Changed From Reference Analysis
+## What Changed From Research Review
 
-The Claude Code reference folder does not change Rampart's product position, but it does make several next steps more concrete.
+External implementation review does not change Rampart's product position, but it does make several next steps more concrete.
 
 - Real terminal agents need explicit startup orchestration, so Rampart should invest early in agent adapters and preflight checks.
 - Permission and mode state become central quickly, so Rampart should mature its profile and audit model before building team administration.
