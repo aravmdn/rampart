@@ -8,7 +8,9 @@ license.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+engine-greywall = { path = "../../../crates/engine-greywall" }
+rampartd = { path = "../../../crates/rampartd" }
+policy-core = { path = "../../../crates/policy-core" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2", features = [] }
-

@@ -1,9 +1,10 @@
 export const TASK3_API_NAMES = {
-  detectCapabilities: "DetectCapabilities",
-  listProfiles: "ListProfiles",
-  launchSession: "LaunchSession",
-  stopSession: "StopSession",
-  streamSessionEvents: "StreamSessionEvents",
+  loadLaunchContext: "load_launch_context",
+  saveSelectedLaunchConfig: "save_selected_launch_config",
+  launchSession: "launch_session",
+  stopSession: "stop_session",
+  streamSessionEvents: "stream_session_events",
+  listSessionHistory: "list_session_history",
 } as const;
 
 export type PlatformKey = "windows" | "macos" | "linux";
@@ -33,6 +34,13 @@ export type AgentTool = {
   id: string;
   label: string;
   detail: string;
+};
+
+export type ProjectSummary = {
+  id: string;
+  label: string;
+  path: string;
+  source: string;
 };
 
 export type ProfileSummary = {
@@ -71,12 +79,36 @@ export type LaunchSessionRequest = {
   profileId: string;
 };
 
+export type SelectedLaunchConfig = {
+  projectPath: string | null;
+  agentId: string | null;
+  profileId: string | null;
+};
+
+export type LaunchContext = {
+  projects: ProjectSummary[];
+  agents: AgentTool[];
+  profiles: ProfileSummary[];
+  selected: SelectedLaunchConfig;
+  capabilities: EngineCapabilitySnapshot;
+};
+
+export type SessionHistoryEntry = {
+  session: SessionState & {
+    startedAtMs: number;
+    endedAtMs: number | null;
+  };
+  events: AuditEvent[];
+  violations: ViolationEvent[];
+};
+
 export type DaemonApi = {
-  detectCapabilities: () => Promise<EngineCapabilitySnapshot>;
-  listProfiles: () => Promise<ProfileSummary[]>;
+  loadLaunchContext: () => Promise<LaunchContext>;
+  saveSelectedLaunchConfig: (selected: SelectedLaunchConfig) => Promise<void>;
   launchSession: (request: LaunchSessionRequest) => Promise<SessionState>;
   stopSession: (sessionId: string) => Promise<SessionState>;
   streamSessionEvents: (
     sessionId: string,
   ) => Promise<{ audit: AuditEvent[]; violations: ViolationEvent[] }>;
+  listSessionHistory: () => Promise<SessionHistoryEntry[]>;
 };
