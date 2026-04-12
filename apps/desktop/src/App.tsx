@@ -14,8 +14,15 @@ import {
 } from "@rampart/shared-ui";
 import "../../../packages/shared-ui/src/styles.css";
 import "./styles.css";
-import { mockAgents, mockDaemonClient, mockProjects } from "./daemon/mockDaemonClient";
-import { TASK3_API_NAMES, type EngineCapabilitySnapshot, type ProfileSummary } from "./daemon/contracts";
+import { tauriDaemonClient } from "./daemon/tauriDaemonClient";
+import {
+  TASK3_API_NAMES,
+  type AgentTool,
+  type DaemonApi,
+  type EngineCapabilitySnapshot,
+  type ProfileSummary,
+  type ProjectSummary,
+} from "./daemon/contracts";
 
 function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] {
   const labels: Record<string, string> = {
@@ -34,9 +41,15 @@ function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] 
   }));
 }
 
-function App() {
-  const [projectId, setProjectId] = useState<string | null>(mockProjects[0]?.id ?? null);
-  const [agentId, setAgentId] = useState<string | null>(mockAgents[0]?.id ?? null);
+type AppProps = {
+  daemonClient?: DaemonApi;
+};
+
+function App({ daemonClient = tauriDaemonClient }: AppProps) {
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [agents, setAgents] = useState<AgentTool[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<EngineCapabilitySnapshot | null>(null);
@@ -52,24 +65,41 @@ function App() {
 
   useEffect(() => {
     void (async () => {
-      const [capabilities, availableProfiles] = await Promise.all([
-        mockDaemonClient.detectCapabilities(),
-        mockDaemonClient.listProfiles(),
-      ]);
-      setSnapshot(capabilities);
-      setProfiles(availableProfiles);
-      setProfileId(availableProfiles[0]?.id ?? null);
+      const launchContext = await daemonClient.loadLaunchContext();
+      setProjects(launchContext.projects);
+      setAgents(launchContext.agents);
+      setProfiles(launchContext.profiles);
+      setSnapshot(launchContext.capabilities);
+      setProjectId(
+        launchContext.projects.find((project) => project.path === launchContext.selected.projectPath)?.id ??
+          launchContext.projects[0]?.id ??
+          null,
+      );
+      setAgentId(launchContext.selected.agentId ?? launchContext.agents[0]?.id ?? null);
+      setProfileId(launchContext.selected.profileId ?? launchContext.profiles[0]?.id ?? null);
     })();
-  }, []);
+  }, [daemonClient]);
 
-  const projectItems: OptionItem[] = mockProjects.map((project) => ({
+  useEffect(() => {
+    const selectedProject = projects.find((project) => project.id === projectId);
+    if (!selectedProject || !agentId || !profileId) {
+      return;
+    }
+    void daemonClient.saveSelectedLaunchConfig({
+      projectPath: selectedProject.path,
+      agentId,
+      profileId,
+    });
+  }, [agentId, daemonClient, profileId, projectId, projects]);
+
+  const projectItems: OptionItem[] = projects.map((project) => ({
     id: project.id,
     title: project.label,
     description: "Project root for sandboxed session.",
     meta: project.path,
   }));
 
-  const agentItems: OptionItem[] = mockAgents.map((agent) => ({
+  const agentItems: OptionItem[] = agents.map((agent) => ({
     id: agent.id,
     title: agent.label,
     description: agent.detail,
@@ -82,8 +112,8 @@ function App() {
   }));
 
   async function handleLaunch() {
-    const selectedProject = mockProjects.find((project) => project.id === projectId);
-    const selectedAgent = mockAgents.find((agent) => agent.id === agentId);
+    const selectedProject = projects.find((project) => project.id === projectId);
+    const selectedAgent = agents.find((agent) => agent.id === agentId);
     const selectedProfile = profiles.find((profile) => profile.id === profileId);
 
     if (!selectedProject || !selectedAgent || !selectedProfile) {
@@ -98,12 +128,12 @@ function App() {
       agentName: selectedAgent.label,
     });
 
-    const launched = await mockDaemonClient.launchSession({
+    const launched = await daemonClient.launchSession({
       projectPath: selectedProject.path,
       agentId: selectedAgent.id,
       profileId: selectedProfile.id,
     });
-    const sessionEvents = await mockDaemonClient.streamSessionEvents(launched.id ?? "");
+    const sessionEvents = await daemonClient.streamSessionEvents(launched.id ?? "");
 
     setSession({
       id: launched.id,
@@ -134,7 +164,7 @@ function App() {
     if (!session.id) {
       return;
     }
-    const stopped = await mockDaemonClient.stopSession(session.id);
+    const stopped = await daemonClient.stopSession(session.id);
     setSession((current) => ({
       ...current,
       status: stopped.status,

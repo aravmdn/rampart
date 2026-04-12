@@ -2,9 +2,12 @@ import type {
   AgentTool,
   AuditEvent,
   DaemonApi,
+  LaunchContext,
   EngineCapabilitySnapshot,
   LaunchSessionRequest,
   ProfileSummary,
+  SelectedLaunchConfig,
+  SessionHistoryEntry,
   SessionState,
   ViolationEvent,
 } from "./contracts";
@@ -108,13 +111,25 @@ function buildViolations(sessionId: string): ViolationEvent[] {
 }
 
 export const mockDaemonClient: DaemonApi = {
-  async detectCapabilities() {
+  async loadLaunchContext(): Promise<LaunchContext> {
     await pause(80);
-    return capabilitySnapshot;
+    return {
+      projects: mockProjects.map((project) => ({
+        ...project,
+        source: "mock",
+      })),
+      agents: mockAgents,
+      profiles,
+      selected: {
+        projectPath: mockProjects[0]?.path ?? null,
+        agentId: mockAgents[0]?.id ?? null,
+        profileId: profiles[0]?.id ?? null,
+      },
+      capabilities: capabilitySnapshot,
+    };
   },
-  async listProfiles() {
-    await pause(60);
-    return profiles;
+  async saveSelectedLaunchConfig(_selected: SelectedLaunchConfig) {
+    await pause(20);
   },
   async launchSession(request: LaunchSessionRequest) {
     await pause(120);
@@ -148,5 +163,9 @@ export const mockDaemonClient: DaemonApi = {
       audit: buildAudit(sessionId),
       violations: buildViolations(sessionId),
     };
+  },
+  async listSessionHistory(): Promise<SessionHistoryEntry[]> {
+    await pause(40);
+    return [];
   },
 };

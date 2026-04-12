@@ -11,14 +11,14 @@ use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LaunchSessionRequest {
     pub project_dir: String,
     pub agent_tool: AgentTool,
     pub profile_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SessionEventRecord {
     Audit(AuditEvent),
     Violation(ViolationEvent),
