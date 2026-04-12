@@ -1,4 +1,4 @@
-use engine_greywall::{GreywallAdapter, RawEngineEvent, RawEngineEventKind};
+use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
 use policy_core::{
     compile_policy, AgentTool, AuditEvent, AuditEventKind, AuditOutcome, EngineCapabilitySnapshot,
     Profile, Session, SessionStatus, ViolationEvent,
@@ -27,18 +27,21 @@ pub trait DaemonApi {
     fn stream_session_events(&self, session_id: &str) -> Result<Vec<SessionEventRecord>, DaemonError>;
 }
 
-pub struct RampartDaemon {
-    adapter: GreywallAdapter,
+pub struct RampartDaemon<E = GreywallAdapter> {
+    engine: E,
     profiles: Vec<Profile>,
     sessions: HashMap<String, Session>,
     events: HashMap<String, VecDeque<SessionEventRecord>>,
     next_session_id: u64,
 }
 
-impl RampartDaemon {
-    pub fn new(adapter: GreywallAdapter, profiles: Vec<Profile>) -> Self {
+impl<E> RampartDaemon<E>
+where
+    E: EnforcementEngine,
+{
+    pub fn new(engine: E, profiles: Vec<Profile>) -> Self {
         Self {
-            adapter,
+            engine,
             profiles,
             sessions: HashMap::new(),
             events: HashMap::new(),
@@ -61,7 +64,7 @@ impl RampartDaemon {
             .get(session_id)
             .map(|queue| queue.len() as u64 + 1)
             .unwrap_or(1);
-        let normalized = self.adapter.normalize_event(RawEngineEvent {
+        let normalized = self.engine.normalize_event(RawEngineEvent {
             session_id: session.id.clone(),
             sequence: next_sequence,
             occurred_at_ms: session.started_at_ms + next_sequence,
@@ -78,9 +81,12 @@ impl RampartDaemon {
     }
 }
 
-impl DaemonApi for RampartDaemon {
+impl<E> DaemonApi for RampartDaemon<E>
+where
+    E: EnforcementEngine,
+{
     fn detect_capabilities(&self) -> Result<EngineCapabilitySnapshot, DaemonError> {
-        Ok(self.adapter.capability_snapshot())
+        Ok(self.engine.capability_snapshot())
     }
 
     fn list_profiles(&self) -> &[Profile] {

@@ -23,6 +23,7 @@ target/
 *.local.md
 *.md
 !README.md
+!AGENTS.md
 !docs/
 !docs/**/*.md
 !docs/adr/**/*.md

@@ -175,6 +175,7 @@ rampart/
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Product reference document](docs/PRD.md)
 - [Threat model](docs/threat-model.md)
 - [Roadmap](docs/roadmap.md)
 - [Business model](docs/business-model.md)
@@ -195,4 +196,4 @@ Rampart is open source under the Apache 2.0 license. The local product is the ad
 
 ## License
 
-Apache 2.0. See [LICENSE](/C:/projects/rampart/LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).

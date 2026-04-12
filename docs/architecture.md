@@ -9,6 +9,13 @@ Rampart is a local-first desktop product for controlling AI coding agents with e
 - Policy core: schema validation, profile compilation, templates, and event normalization
 - Engine adapters: translate Rampart policy into engine-specific launch and enforcement configuration
 
+## Runtime boundary
+
+- `rampartd` depends on an engine trait, not a hard-coded sandbox implementation.
+- Engine adapters own binary discovery, capability reporting, and event normalization.
+- Current `greywall` adapter is reference integration for non-Windows paths and compatibility testing.
+- Windows-first delivery means public docs and capability snapshots must not imply `greywall` is Rampart's Windows runtime.
+
 ## Product loop
 
 1. Choose a project, agent, and profile.

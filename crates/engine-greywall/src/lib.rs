@@ -9,6 +9,12 @@ use thiserror::Error;
 
 pub const ENGINE_ID: &str = "greywall";
 
+pub trait EnforcementEngine: Send + Sync {
+    fn engine_id(&self) -> &'static str;
+    fn capability_snapshot(&self) -> EngineCapabilitySnapshot;
+    fn normalize_event(&self, event: RawEngineEvent) -> NormalizedEngineEvent;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GreywallAdapter {
     pub binary_path: PathBuf,
@@ -71,7 +77,7 @@ impl GreywallAdapter {
         Self::from_binary_path(default_binary_path_for_current_platform(), GreywallVersion { major: 0, minor: 3, patch: 0 })
     }
 
-    pub fn capability_snapshot(&self) -> EngineCapabilitySnapshot {
+    fn build_capability_snapshot(&self) -> EngineCapabilitySnapshot {
         let _ = &self.binary_path;
         let platform = current_platform_name();
         let windows_like = platform == "windows" || platform == "other";
@@ -139,7 +145,7 @@ impl GreywallAdapter {
         }
     }
 
-    pub fn normalize_event(&self, event: RawEngineEvent) -> NormalizedEngineEvent {
+    fn map_event(&self, event: RawEngineEvent) -> NormalizedEngineEvent {
         let _ = &self.version;
         match event.kind {
             RawEngineEventKind::AllowRead => NormalizedEngineEvent {
@@ -158,6 +164,20 @@ impl GreywallAdapter {
             RawEngineEventKind::BlockWrite => blocked_event(event, "write"),
             RawEngineEventKind::BlockExec => blocked_event(event, "execute"),
         }
+    }
+}
+
+impl EnforcementEngine for GreywallAdapter {
+    fn engine_id(&self) -> &'static str {
+        ENGINE_ID
+    }
+
+    fn capability_snapshot(&self) -> EngineCapabilitySnapshot {
+        self.build_capability_snapshot()
+    }
+
+    fn normalize_event(&self, event: RawEngineEvent) -> NormalizedEngineEvent {
+        self.map_event(event)
     }
 }
 

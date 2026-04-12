@@ -5,6 +5,7 @@ Rampart keeps a small public documentation set in git so contributors and users 
 ## Public by default
 
 - `README.md`
+- `AGENTS.md`
 - `docs/architecture.md`
 - `docs/threat-model.md`
 - `docs/business-model.md`
