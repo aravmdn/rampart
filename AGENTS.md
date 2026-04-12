@@ -122,6 +122,7 @@
 - When the repository is updated in a way that changes product direction, architecture, module boundaries, workflow, or developer-facing setup, update `AGENTS.md`, `README.md`, and the relevant public docs in `docs/` in the same body of work.
 - Keep the intended user workflow explicit in docs whenever product wording changes, so future implementation work does not drift into an unintended "generic dashboard" or "replacement chat client" shape.
 - Keep public documentation official in tone. Do not publish internal execution notes, personal planning details, private prompts, or tactical build instructions unless the user explicitly wants them public.
+- Treat `docs/PRD.md` as private planning material unless the user explicitly asks to publish a sanitized public version.
 - Do not create deep docs sprawl early; prefer a few high-signal docs.
 
 ## Verification guidance

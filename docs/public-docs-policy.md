@@ -13,6 +13,10 @@ Rampart keeps a small public documentation set in git so contributors and users 
 - `docs/adr/*.md`
 - `docs/public-docs-policy.md`
 
+## Private-only docs
+
+- `docs/PRD.md`
+
 ## Private and local-only
 
 - `AGENTS.md`
