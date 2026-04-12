@@ -121,6 +121,14 @@ Near-term emphasis is intentionally narrow:
 - Keep policy authoring above raw engine syntax
 - Avoid premature expansion into team admin or generic governance tooling
 
+Reference-guided implementation priorities are now clearer:
+
+- add agent-specific launch adapters and startup diagnostics
+- keep launcher flow, live session flow, and history flow as separate product states
+- surface truthful capability limits before session start
+- mature local session history into a first-class record of launch context, events, and violations
+- keep terminal-first agent UX intact instead of forcing all interaction into a replacement chat client
+
 ## Getting Started
 
 Rampart currently has a real workspace skeleton for the documented modules.
@@ -182,6 +190,8 @@ rampart/
 - [Business model](docs/business-model.md)
 - [Workspace ADR](docs/adr/0001-workspace-layout.md)
 - [Public documentation policy](docs/public-docs-policy.md)
+
+The repository also contains a `reference/` area for architecture study. It is useful as design input for agent launch, session state, and permission modeling, but the public docs only capture the resulting product-level decisions.
 
 ## Public Documentation Policy
 

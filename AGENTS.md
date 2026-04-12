@@ -23,6 +23,7 @@
 - Enforce security controls outside model prompts. Prefer OS/kernel primitives, wrappers, allowlists, and deterministic checks over prompt instructions.
 - Treat the enforcement engine as replaceable. `greywall` remains a reference implementation for macOS/Linux, but Windows-first delivery means the product cannot assume `greywall` is the only or primary runtime.
 - Preserve an engine abstraction so the repo can later support alternate runtimes or a maintained fork.
+- Preserve a separate agent adapter abstraction so agent-specific startup and handoff logic does not leak into the enforcement engine abstraction.
 - The first valuable loop is:
   1. choose project + agent + profile
   2. launch sandboxed session
@@ -30,6 +31,18 @@
   4. explain what was blocked and why
   5. allow the user to refine policy safely
 - For terminal-oriented tools such as Claude Code and Codex, assume the near-term product should let users keep using those tools while Rampart controls launch, enforcement, visibility, and history around the session.
+
+## Reference code guidance
+- The `reference/` directory may be used for architecture study and competitive implementation research.
+- Use reference code to extract patterns that help Rampart quickly, such as:
+  - startup and preflight orchestration
+  - agent-specific launch adapters
+  - session state boundaries
+  - permission and mode vocabulary
+  - history and resume data shape
+- Do not treat reference code as something to port wholesale.
+- Do not copy private or vendor-specific implementation detail into public docs or product claims.
+- When reference analysis changes Rampart architecture or roadmap meaningfully, update `AGENTS.md`, `README.md`, `docs/architecture.md`, and `docs/roadmap.md` together.
 
 ## Target repo shape
 - Current repo is greenfield. Build toward this layout unless a later decision replaces it:
@@ -53,6 +66,18 @@
 - Phase 2: profile editing, reusable presets, local session history, violation explanations, safe policy refinement.
 - Phase 3: team features behind clear boundaries: shared policies, signed profile distribution, centralized audit sync, org settings.
 - Phase 4: CI and headless modes, broader engine support, enterprise controls where justified.
+
+Reference-informed next steps inside those phases:
+- Early Phase 1:
+  - add agent-specific launch adapters and preflight diagnostics
+  - make capability warnings visible before launch
+  - keep launch surface distinct from the active session console
+- Late Phase 1 / Early Phase 2:
+  - persist full session records, not only loose event lists
+  - add rule-linked violation explanations with platform-limit notes
+  - define a stable audit event taxonomy across engines and agents
+- Later phases:
+  - add headless launch paths and remote or bridge attachment only after the local loop is trustworthy
 
 ## Cross-domain workflows
 - Desktop -> daemon:
