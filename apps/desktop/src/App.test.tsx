@@ -74,6 +74,11 @@ describe("desktop shell", () => {
     render(<App daemonClient={client} />);
 
     expect(await screen.findByText("Windows Safe")).toBeInTheDocument();
+    expect(client.saveSelectedLaunchConfig).toHaveBeenCalledWith({
+      projectPath: "C:\\projects\\rampart",
+      agentId: "codex",
+      profileId: "windows-safe",
+    });
     const launch = await screen.findByRole("button", { name: "Launch session" });
     fireEvent.click(launch);
 

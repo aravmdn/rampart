@@ -620,62 +620,11 @@ fn default_agents() -> Vec<AgentCatalogEntry> {
 }
 
 fn default_profiles() -> Vec<Profile> {
-    vec![
-        Profile {
-            id: "windows-safe".into(),
-            name: "Windows Safe".into(),
-            description: Some("Project scoped read/write with network denied by default.".into()),
-            extends: None,
-            policy: policy_core::Policy {
-                filesystem: policy_core::FilesystemPolicy {
-                    readable_roots: vec![detect_repo_root()
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_else(|_| r"C:\projects\rampart".into())],
-                    writable_roots: vec![detect_repo_root()
-                        .map(|path| path.join("apps").display().to_string())
-                        .unwrap_or_else(|_| r"C:\projects\rampart\apps".into())],
-                    blocked_roots: vec![r"C:\Users".into()],
-                },
-                network: policy_core::NetworkPolicy {
-                    default_action: policy_core::DefaultAction::Deny,
-                    allowed_hosts: Vec::new(),
-                    blocked_hosts: Vec::new(),
-                },
-                process: policy_core::ProcessPolicy {
-                    default_action: policy_core::DefaultAction::Deny,
-                    allowed_commands: vec!["git".into()],
-                    blocked_commands: vec!["powershell".into()],
-                },
-            },
-        },
-        Profile {
-            id: "windows-strict".into(),
-            name: "Windows Strict".into(),
-            description: Some("Project read only outside source tree. Child process creation denied.".into()),
-            extends: Some("windows-safe".into()),
-            policy: policy_core::Policy {
-                filesystem: policy_core::FilesystemPolicy {
-                    readable_roots: vec![detect_repo_root()
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_else(|_| r"C:\projects\rampart".into())],
-                    writable_roots: vec![detect_repo_root()
-                        .map(|path| path.join("crates").display().to_string())
-                        .unwrap_or_else(|_| r"C:\projects\rampart\crates".into())],
-                    blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
-                },
-                network: policy_core::NetworkPolicy {
-                    default_action: policy_core::DefaultAction::Deny,
-                    allowed_hosts: Vec::new(),
-                    blocked_hosts: Vec::new(),
-                },
-                process: policy_core::ProcessPolicy {
-                    default_action: policy_core::DefaultAction::Deny,
-                    allowed_commands: vec!["git".into()],
-                    blocked_commands: vec!["powershell".into(), "cmd".into()],
-                },
-            },
-        },
-    ]
+    policy_core::desktop_profile_presets(
+        &detect_repo_root()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| r"C:\projects\rampart".into()),
+    )
 }
 
 fn slugify(value: &str) -> String {

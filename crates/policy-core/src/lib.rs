@@ -740,6 +740,61 @@ pub fn validate_policy_against_capabilities(
     finish(errors)
 }
 
+pub fn desktop_profile_presets(project_root: &str) -> Vec<Profile> {
+    let normalized_root = project_root.trim().trim_end_matches(['\\', '/']).to_string();
+    let apps_root = format!("{normalized_root}\\apps");
+    let crates_root = format!("{normalized_root}\\crates");
+
+    vec![
+        Profile {
+            id: "windows-safe".into(),
+            name: "Windows Safe".into(),
+            description: Some("Project scoped read/write with network denied by default.".into()),
+            extends: None,
+            policy: Policy {
+                filesystem: FilesystemPolicy {
+                    readable_roots: vec![normalized_root.clone()],
+                    writable_roots: vec![apps_root],
+                    blocked_roots: vec![r"C:\Users".into()],
+                },
+                network: NetworkPolicy {
+                    default_action: DefaultAction::Deny,
+                    allowed_hosts: Vec::new(),
+                    blocked_hosts: Vec::new(),
+                },
+                process: ProcessPolicy {
+                    default_action: DefaultAction::Deny,
+                    allowed_commands: vec!["git".into()],
+                    blocked_commands: vec!["powershell".into()],
+                },
+            },
+        },
+        Profile {
+            id: "windows-strict".into(),
+            name: "Windows Strict".into(),
+            description: Some("Project read only outside source tree. Child process creation denied.".into()),
+            extends: Some("windows-safe".into()),
+            policy: Policy {
+                filesystem: FilesystemPolicy {
+                    readable_roots: vec![normalized_root],
+                    writable_roots: vec![crates_root],
+                    blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                },
+                network: NetworkPolicy {
+                    default_action: DefaultAction::Deny,
+                    allowed_hosts: Vec::new(),
+                    blocked_hosts: Vec::new(),
+                },
+                process: ProcessPolicy {
+                    default_action: DefaultAction::Deny,
+                    allowed_commands: vec!["git".into()],
+                    blocked_commands: vec!["powershell".into(), "cmd".into()],
+                },
+            },
+        },
+    ]
+}
+
 fn finish(errors: ValidationErrors) -> Result<(), ValidationErrors> {
     if errors.is_empty() {
         Ok(())
