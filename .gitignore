@@ -21,3 +21,5 @@ target/
 *.personal.md
 *.notes.md
 *.local.md
+*.md
+!README.md
