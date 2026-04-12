@@ -27,3 +27,4 @@ target/
 !docs/
 !docs/**/*.md
 !docs/adr/**/*.md
+reference/claude-code-private/
