@@ -15,6 +15,13 @@ Rampart is a local-first desktop product for controlling AI coding agents with e
 - Engine adapters own binary discovery, capability reporting, and event normalization.
 - Current `greywall` adapter is reference integration for non-Windows paths and compatibility testing.
 - Windows-first delivery means public docs and capability snapshots must not imply `greywall` is Rampart's Windows runtime.
+- The desktop talks to the daemon through a Tauri invoke bridge. Command construction, project detection, profile resolution, local persistence, and history queries stay on the Rust side of that boundary.
+
+## Local persistence
+
+- Launch selections and session history persist locally through the daemon.
+- The current implementation stores launcher selections and session history in a local daemon-managed state file so project, agent, profile, audit, and violation records survive desktop restarts.
+- Persisted history is part of the core product loop because blocked actions need to remain visible after a session ends, not only while a session is live.
 
 ## Product loop
 

@@ -67,6 +67,8 @@ Rampart is structured as a local desktop product with explicit boundaries:
 
 The current architecture keeps enforcement outside the UI and outside model prompts. Users interact with projects, profiles, violations, and policies. The daemon and engine layers handle command construction, runtime configuration, capability detection, and structured event conversion.
 
+The current desktop shell talks to the daemon through a Tauri invoke bridge. Launch selections and session history are persisted locally by the daemon so the project, agent, profile, and prior blocked actions survive desktop restarts without adding a cloud dependency.
+
 Rampart should also support terminal-first users over time. The desktop app is the clearest entry point, but the product direction includes a local CLI and headless execution path so developers who normally work in terminals can still run `claude`, `codex`, or similar tools through Rampart-managed profiles and enforcement.
 
 ## Execution Model
@@ -175,7 +177,6 @@ rampart/
 ## Documentation
 
 - [Architecture](docs/architecture.md)
-- [Product reference document](docs/PRD.md)
 - [Threat model](docs/threat-model.md)
 - [Roadmap](docs/roadmap.md)
 - [Business model](docs/business-model.md)
@@ -187,6 +188,7 @@ rampart/
 The public repo intentionally keeps a small docs set in git so contributors can understand Rampart's architecture and security model without exposing private working notes.
 
 - Public docs live under `docs/` and cover product-level architecture, threat model, roadmap, and business context.
+- Internal planning material such as `docs/PRD.md` is not part of the public documentation set unless explicitly sanitized for publication.
 - Private operator notes, prompt files, task notes, and personal instructions are not committed to the public repo.
 - Secrets, keys, passwords, tokens, and local-only artifacts must never be tracked.
 

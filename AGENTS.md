@@ -57,6 +57,7 @@
 ## Cross-domain workflows
 - Desktop -> daemon:
   - Desktop should talk to the local daemon over a narrow internal API.
+  - The current desktop path uses a Tauri invoke bridge into daemon-owned Rust services.
   - Keep command construction, process launch, and policy enforcement out of the UI layer.
   - Desktop owns the user workflow of project selection, agent selection, profile selection, live session visibility, and history review.
 - Daemon -> engine adapter:
@@ -70,6 +71,7 @@
   - Engine emits logs, violations, and raw events.
   - Adapter normalizes them into Rampart event types.
   - Daemon persists local history and streams live updates to the desktop app.
+  - Local launch selections and session history should remain daemon-owned persisted state, not frontend-only cache.
 
 ## Core domain concepts
 - Agent: the AI tool being launched, such as Claude Code or Codex.

@@ -6,7 +6,6 @@ Rampart keeps a small public documentation set in git so contributors and users 
 
 - `README.md`
 - `AGENTS.md`
-- `docs/PRD.md`
 - `docs/architecture.md`
 - `docs/threat-model.md`
 - `docs/business-model.md`
@@ -20,6 +19,7 @@ Rampart keeps a small public documentation set in git so contributors and users 
 - task notes
 - sync notes
 - personal planning notes
+- `docs/PRD.md` unless explicitly sanitized for publication
 - any file that contains secrets, credentials, private strategy, or founder-specific working context
 
 ## Rules
