@@ -36,6 +36,31 @@ type RawLaunchContext = {
   };
 };
 
+type RawHistoryEntry = {
+  session: {
+    id: string;
+    status: string;
+    profile_id: string;
+    project_path: string;
+    started_at_ms: number;
+    ended_at_ms: number | null;
+  };
+  events: {
+    kind: string;
+    message: string;
+    session_id: string;
+    sequence: number;
+    occurred_at_ms: number;
+  }[];
+  violations: {
+    id?: string;
+    action: "read" | "write" | "execute" | "network";
+    target: string;
+    rule_id: string;
+    reason: string;
+  }[];
+};
+
 function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
   return {
     projects: raw.projects,
@@ -112,6 +137,34 @@ export const tauriDaemonClient: DaemonApi = {
     return invoke<{ audit: any[]; violations: any[] }>("stream_session_events", { sessionId });
   },
   async listSessionHistory() {
-    return invoke<SessionHistoryEntry[]>("list_session_history");
+    const response = await invoke<RawHistoryEntry[]>("list_session_history");
+    return response.map((entry) => ({
+      session: {
+        id: entry.session.id,
+        status: mapSessionState(entry.session).status,
+        profileId: entry.session.profile_id,
+        agentId: null,
+        projectPath: entry.session.project_path,
+        startedAtMs: entry.session.started_at_ms,
+        endedAtMs: entry.session.ended_at_ms,
+      },
+      events: entry.events.map((event, index) => ({
+        id: `${entry.session.id}-event-${index}`,
+        kind:
+          event.kind === "violation-recorded"
+            ? "block_observed"
+            : event.kind === "session-ended"
+              ? "session_stopped"
+              : "allow_observed",
+        message: event.message,
+      })),
+      violations: entry.violations.map((violation, index) => ({
+        id: `${entry.session.id}-violation-${index}`,
+        operation: violation.action,
+        target: violation.target,
+        ruleId: violation.rule_id,
+        message: violation.reason,
+      })),
+    }));
   },
 };

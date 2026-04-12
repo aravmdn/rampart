@@ -68,12 +68,43 @@ describe("desktop shell", () => {
           },
         ],
       }),
-      listSessionHistory: vi.fn().mockResolvedValue([]),
+      listSessionHistory: vi.fn().mockResolvedValue([
+        {
+          session: {
+            id: "session-prev",
+            status: "stopped",
+            profileId: "windows-safe",
+            agentId: "codex",
+            projectPath: "C:\\projects\\rampart",
+            startedAtMs: 100,
+            endedAtMs: 120,
+          },
+          events: [
+            {
+              id: "audit-prev",
+              kind: "block_observed",
+              message: "Blocked write to C:\\Users\\dev\\.ssh\\config",
+            },
+          ],
+          violations: [
+            {
+              id: "violation-prev",
+              operation: "write",
+              target: "C:\\Users\\dev\\.ssh\\config",
+              ruleId: "project_scope",
+              message: "Policy denied write outside allowed project roots.",
+            },
+          ],
+        },
+      ]),
     };
 
     render(<App daemonClient={client} />);
 
     expect(await screen.findByText("Windows Safe")).toBeInTheDocument();
+    expect(await screen.findByText("Recent History")).toBeInTheDocument();
+    expect(screen.getByText("session-prev")).toBeInTheDocument();
+    expect(screen.getByText(/Blocked write to C:\\Users\\dev\\.ssh\\config/)).toBeInTheDocument();
     expect(client.saveSelectedLaunchConfig).toHaveBeenCalledWith({
       projectPath: "C:\\projects\\rampart",
       agentId: "codex",
