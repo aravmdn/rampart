@@ -149,3 +149,18 @@ fn canonical_entities_construct_cleanly() {
         violation: Some(violation),
     };
 }
+
+#[test]
+fn desktop_profile_presets_are_windows_first_and_compile() {
+    let presets = policy_core::desktop_profile_presets(r"C:\projects\rampart");
+
+    assert_eq!(presets.len(), 2, "expected safe and strict presets");
+    assert_eq!(presets[0].id, "windows-safe");
+    assert_eq!(presets[1].id, "windows-strict");
+    assert_eq!(presets[1].extends.as_deref(), Some("windows-safe"));
+
+    for preset in presets {
+        preset.validate().expect("preset should validate");
+        compile_policy(&preset.policy).expect("preset should compile");
+    }
+}
