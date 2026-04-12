@@ -22,6 +22,7 @@ The intended desktop product should feel like a local launch-and-control console
 - [Getting Started](#getting-started)
 - [Repository Layout](#repository-layout)
 - [Documentation](#documentation)
+- [Public Documentation Policy](#public-documentation-policy)
 
 ## Why Rampart
 
@@ -173,12 +174,20 @@ rampart/
 
 ## Documentation
 
-- [Architecture](/C:/projects/rampart/docs/architecture.md)
-- [Threat model](/C:/projects/rampart/docs/threat-model.md)
-- [Roadmap](/C:/projects/rampart/docs/roadmap.md)
-- [Business model and scalability](/C:/projects/rampart/docs/business-model.md)
-- [Workspace ADR](/C:/projects/rampart/docs/adr/0001-workspace-layout.md)
-- [Product reference document](/C:/projects/rampart/docs/PRD.md)
+- [Architecture](docs/architecture.md)
+- [Threat model](docs/threat-model.md)
+- [Roadmap](docs/roadmap.md)
+- [Business model](docs/business-model.md)
+- [Workspace ADR](docs/adr/0001-workspace-layout.md)
+- [Public documentation policy](docs/public-docs-policy.md)
+
+## Public Documentation Policy
+
+The public repo intentionally keeps a small docs set in git so contributors can understand Rampart's architecture and security model without exposing private working notes.
+
+- Public docs live under `docs/` and cover product-level architecture, threat model, roadmap, and business context.
+- Private operator notes, prompt files, task notes, and personal instructions are not committed to the public repo.
+- Secrets, keys, passwords, tokens, and local-only artifacts must never be tracked.
 
 ## Open Source
 
