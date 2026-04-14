@@ -15,6 +15,7 @@ describe("desktop shell", () => {
             id: "codex",
             label: "Codex",
             detail: "OpenAI coding agent in local desktop flow.",
+            terminalFirst: true,
           },
         ],
         profiles: [
@@ -36,6 +37,12 @@ describe("desktop shell", () => {
         },
       }),
       saveSelectedLaunchConfig: vi.fn().mockResolvedValue(undefined),
+      preflightCheck: vi.fn().mockResolvedValue({
+        ready: true,
+        diagnostics: [
+          { severity: "pass", label: "Project directory", detail: "Exists." },
+        ],
+      }),
       launchSession: vi.fn().mockResolvedValue({
         id: "session-1",
         status: "active",
@@ -101,6 +108,7 @@ describe("desktop shell", () => {
 
     render(<App daemonClient={client} />);
 
+    // Launcher view
     expect(await screen.findByText("Windows Safe")).toBeInTheDocument();
     expect(await screen.findByText("Recent History")).toBeInTheDocument();
     expect(screen.getByText("session-prev")).toBeInTheDocument();
@@ -110,13 +118,28 @@ describe("desktop shell", () => {
       agentId: "codex",
       profileId: "windows-safe",
     });
+
+    // Preflight check was called
+    expect(client.preflightCheck).toHaveBeenCalledWith(
+      "C:\\projects\\rampart",
+      "codex",
+      "windows-safe",
+    );
+
+    // Terminal handoff note visible for terminal-first agent
+    expect(await screen.findByText("Terminal Handoff")).toBeInTheDocument();
+
+    // Preflight diagnostics visible
+    expect(await screen.findByText("Preflight Diagnostics")).toBeInTheDocument();
+
+    // Launch
     const launch = await screen.findByRole("button", { name: "Launch session" });
     fireEvent.click(launch);
 
+    // Session console view
     expect(await screen.findByText("read blocked")).toBeInTheDocument();
     expect(
       screen.getByText(/Blocked read on C:\\Users\\dev\\.ssh\\config/),
     ).toBeInTheDocument();
-    expect(screen.getByText("Capability Snapshot")).toBeInTheDocument();
   });
 });

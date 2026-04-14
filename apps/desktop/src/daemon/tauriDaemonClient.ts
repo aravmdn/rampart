@@ -3,6 +3,7 @@ import type {
   DaemonApi,
   LaunchContext,
   LaunchSessionRequest,
+  PreflightReport,
   SelectedLaunchConfig,
   SessionHistoryEntry,
   SessionState,
@@ -19,6 +20,7 @@ type RawLaunchContext = {
     id: string;
     label: string;
     detail: string;
+    terminal_first: boolean;
   }[];
   profiles: {
     id: string;
@@ -34,6 +36,11 @@ type RawLaunchContext = {
     engine_name: string;
     platform: string;
   };
+  capability_items: {
+    key: string;
+    status: string;
+    detail: string;
+  }[];
 };
 
 type RawHistoryEntry = {
@@ -64,7 +71,12 @@ type RawHistoryEntry = {
 function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
   return {
     projects: raw.projects,
-    agents: raw.agents,
+    agents: raw.agents.map((agent) => ({
+      id: agent.id,
+      label: agent.label,
+      detail: agent.detail,
+      terminalFirst: agent.terminal_first,
+    })),
     profiles: raw.profiles.map((profile) => ({
       id: profile.id,
       displayName: profile.display_name,
@@ -78,7 +90,11 @@ function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
     capabilities: {
       engineName: raw.capabilities.engine_name,
       platform: raw.capabilities.platform as "windows" | "macos" | "linux",
-      capabilities: [],
+      capabilities: (raw.capability_items ?? []).map((item) => ({
+        key: item.key as any,
+        status: item.status as any,
+        detail: item.detail,
+      })),
     },
   };
 }
@@ -114,6 +130,9 @@ export const tauriDaemonClient: DaemonApi = {
   },
   async saveSelectedLaunchConfig(selected: SelectedLaunchConfig) {
     await invoke("save_selected_launch_config", { selected });
+  },
+  async preflightCheck(projectDir: string, agentId: string, profileId: string): Promise<PreflightReport> {
+    return invoke<PreflightReport>("preflight_check", { projectDir, agentId, profileId });
   },
   async launchSession(request: LaunchSessionRequest) {
     const response = await invoke<{

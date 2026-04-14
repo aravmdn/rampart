@@ -20,10 +20,13 @@ import {
   type AgentTool,
   type DaemonApi,
   type EngineCapabilitySnapshot,
+  type PreflightReport,
   type ProfileSummary,
   type ProjectSummary,
   type SessionHistoryEntry,
 } from "./daemon/contracts";
+
+type AppView = "launcher" | "session";
 
 function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] {
   const labels: Record<string, string> = {
@@ -42,11 +45,17 @@ function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] 
   }));
 }
 
+function hasUnsupported(snapshot: EngineCapabilitySnapshot | null): boolean {
+  if (!snapshot) return false;
+  return snapshot.capabilities.some((c) => c.status === "unsupported");
+}
+
 type AppProps = {
   daemonClient?: DaemonApi;
 };
 
 function App({ daemonClient = tauriDaemonClient }: AppProps) {
+  const [view, setView] = useState<AppView>("launcher");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [agents, setAgents] = useState<AgentTool[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -54,6 +63,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<EngineCapabilitySnapshot | null>(null);
+  const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [session, setSession] = useState<SessionStatusView>({
     id: null,
     status: "idle",
@@ -96,6 +106,16 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     });
   }, [agentId, daemonClient, profileId, projectId, projects]);
 
+  // Run preflight whenever selections change
+  useEffect(() => {
+    const selectedProject = projects.find((project) => project.id === projectId);
+    if (!selectedProject || !agentId || !profileId) {
+      setPreflight(null);
+      return;
+    }
+    void daemonClient.preflightCheck(selectedProject.path, agentId, profileId).then(setPreflight);
+  }, [agentId, daemonClient, profileId, projectId, projects]);
+
   const projectItems: OptionItem[] = projects.map((project) => ({
     id: project.id,
     title: project.label,
@@ -106,7 +126,9 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const agentItems: OptionItem[] = agents.map((agent) => ({
     id: agent.id,
     title: agent.label,
-    description: agent.detail,
+    description: agent.terminalFirst
+      ? `${agent.detail} Terminal-first: interaction happens in the agent\u2019s own terminal.`
+      : agent.detail,
   }));
 
   const profileItems: OptionItem[] = profiles.map((profile) => ({
@@ -115,9 +137,10 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     description: profile.detail,
   }));
 
+  const selectedAgent = agents.find((agent) => agent.id === agentId);
+
   async function handleLaunch() {
     const selectedProject = projects.find((project) => project.id === projectId);
-    const selectedAgent = agents.find((agent) => agent.id === agentId);
     const selectedProfile = profiles.find((profile) => profile.id === profileId);
 
     if (!selectedProject || !selectedAgent || !selectedProfile) {
@@ -131,6 +154,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       profileName: selectedProfile.displayName,
       agentName: selectedAgent.label,
     });
+    setView("session");
 
     const launched = await daemonClient.launchSession({
       projectPath: selectedProject.path,
@@ -179,83 +203,171 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setHistory(recentHistory);
   }
 
+  function handleBackToLauncher() {
+    setView("launcher");
+    setSession({ id: null, status: "idle", projectPath: null, profileName: null, agentName: null });
+    setEvents([]);
+    setViolations([]);
+  }
+
+  // ── Launcher view ──────────────────────────────────────────────────
+  if (view === "launcher") {
+    return (
+      <main className="shell">
+        <section className="panel hero">
+          <p className="eyebrow">Rampart desktop shell</p>
+          <h1>Launch console</h1>
+          <p className="muted">
+            Pick a project, agent, and profile. Review capability warnings and preflight diagnostics before launch.
+          </p>
+          <p className="muted">Mock API names for Task 3 sync: {Object.values(TASK3_API_NAMES).join(", ")}</p>
+        </section>
+
+        <div className="columns">
+          <div className="column">
+            <PickerSection
+              title="Project picker"
+              subtitle="Choose project scope before launch."
+              items={projectItems}
+              selectedId={projectId}
+              onSelect={setProjectId}
+            />
+            <PickerSection
+              title="Agent picker"
+              subtitle="Choose supported agent tool."
+              items={agentItems}
+              selectedId={agentId}
+              onSelect={setAgentId}
+            />
+            <PickerSection
+              title="Profile picker"
+              subtitle="Choose default-deny profile preset."
+              items={profileItems}
+              selectedId={profileId}
+              onSelect={setProfileId}
+            />
+
+            {selectedAgent?.terminalFirst ? (
+              <section className="panel">
+                <h2>Terminal Handoff</h2>
+                <p className="muted">
+                  {selectedAgent.label} is a terminal-first agent. Rampart will launch the session and apply enforcement,
+                  but interaction happens in the agent&rsquo;s own terminal. Rampart stays open for live session state,
+                  violation visibility, and stop control.
+                </p>
+              </section>
+            ) : null}
+
+            <section className="panel action-panel">
+              <button
+                className="launch-button"
+                type="button"
+                onClick={handleLaunch}
+                disabled={!preflight?.ready}
+              >
+                Launch session
+              </button>
+              {preflight && !preflight.ready ? (
+                <p className="muted">Preflight checks must pass before launch.</p>
+              ) : null}
+            </section>
+          </div>
+
+          <div className="column">
+            {snapshot ? (
+              <CapabilityPanel
+                platformLabel={snapshot.platform}
+                engineName={snapshot.engineName}
+                capabilities={toCapabilityView(snapshot)}
+              />
+            ) : null}
+            {hasUnsupported(snapshot) ? (
+              <section className="panel">
+                <h2>Capability Warnings</h2>
+                <p className="muted">
+                  Some enforcement capabilities are unsupported on this platform and engine combination.
+                  Policy rules in unsupported domains will not be enforced during the session.
+                  Review the capability snapshot above before launching.
+                </p>
+              </section>
+            ) : null}
+
+            {preflight ? (
+              <section className="panel">
+                <h2>Preflight Diagnostics</h2>
+                <ul className="plain-list">
+                  {preflight.diagnostics.map((diagnostic, index) => (
+                    <li key={index}>
+                      <strong>
+                        {diagnostic.severity === "pass" ? "\u2713" : diagnostic.severity === "fail" ? "\u2717" : "\u26A0"}{" "}
+                        {diagnostic.label}
+                      </strong>
+                      <div className="muted">{diagnostic.detail}</div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            <section className="panel">
+              <h2>Recent History</h2>
+              {history.length === 0 ? (
+                <p className="muted">No persisted sessions yet.</p>
+              ) : (
+                <ul className="plain-list">
+                  {history.map((entry) => (
+                    <li key={entry.session.id}>
+                      <strong>{entry.session.id}</strong>
+                      <div className="muted">{entry.session.projectPath}</div>
+                      {entry.events[0] ? <div>{entry.events[0].message}</div> : null}
+                      {entry.violations[0] ? (
+                        <div className="muted">
+                          Latest block: {entry.violations[0].target} ({entry.violations[0].ruleId})
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ── Session console view ───────────────────────────────────────────
   return (
     <main className="shell">
       <section className="panel hero">
-        <p className="eyebrow">Rampart desktop shell</p>
-        <h1>Windows-first session loop with mocked daemon truth</h1>
+        <p className="eyebrow">Rampart session console</p>
+        <h1>Active session</h1>
         <p className="muted">
-          UI shows launch choices, capability gaps, audit stream, and blocked action explanation.
-          Command construction stays outside view layer and stays daemon-owned.
+          Live session state, audit events, and blocked action explanations.
         </p>
-        <p className="muted">Mock API names for Task 3 sync: {Object.values(TASK3_API_NAMES).join(", ")}</p>
       </section>
 
       <div className="columns">
         <div className="column">
-          <PickerSection
-            title="Project picker"
-            subtitle="Choose project scope before launch."
-            items={projectItems}
-            selectedId={projectId}
-            onSelect={setProjectId}
-          />
-          <PickerSection
-            title="Agent picker"
-            subtitle="Choose supported agent tool."
-            items={agentItems}
-            selectedId={agentId}
-            onSelect={setAgentId}
-          />
-          <PickerSection
-            title="Profile picker"
-            subtitle="Choose default-deny profile preset."
-            items={profileItems}
-            selectedId={profileId}
-            onSelect={setProfileId}
-          />
+          <SessionStatusPanel value={session} />
           <section className="panel action-panel">
-            <button className="launch-button" type="button" onClick={handleLaunch}>
-              Launch session
-            </button>
             <button className="secondary-button" type="button" onClick={handleStop} disabled={!session.id}>
               Stop session
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={handleBackToLauncher}
+              disabled={session.status === "active" || session.status === "launching"}
+            >
+              Back to launcher
             </button>
           </section>
         </div>
 
         <div className="column">
-          {snapshot ? (
-            <CapabilityPanel
-              platformLabel={snapshot.platform}
-              engineName={snapshot.engineName}
-              capabilities={toCapabilityView(snapshot)}
-            />
-          ) : null}
-          <SessionStatusPanel value={session} />
           <ViolationList violations={violations} />
           <EventList events={events} />
-          <section className="panel">
-            <h2>Recent History</h2>
-            {history.length === 0 ? (
-              <p className="muted">No persisted sessions yet.</p>
-            ) : (
-              <ul className="plain-list">
-                {history.map((entry) => (
-                  <li key={entry.session.id}>
-                    <strong>{entry.session.id}</strong>
-                    <div className="muted">{entry.session.projectPath}</div>
-                    {entry.events[0] ? <div>{entry.events[0].message}</div> : null}
-                    {entry.violations[0] ? (
-                      <div className="muted">
-                        Latest block: {entry.violations[0].target} ({entry.violations[0].ruleId})
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
         </div>
       </div>
     </main>

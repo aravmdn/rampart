@@ -5,6 +5,7 @@ import type {
   LaunchContext,
   EngineCapabilitySnapshot,
   LaunchSessionRequest,
+  PreflightReport,
   ProfileSummary,
   SelectedLaunchConfig,
   SessionHistoryEntry,
@@ -22,11 +23,13 @@ export const mockAgents: AgentTool[] = [
     id: "codex",
     label: "Codex",
     detail: "OpenAI coding agent in local desktop flow.",
+    terminalFirst: true,
   },
   {
     id: "claude-code",
     label: "Claude Code",
     detail: "Anthropic agent with profile-driven launch.",
+    terminalFirst: true,
   },
 ];
 
@@ -130,6 +133,17 @@ export const mockDaemonClient: DaemonApi = {
   },
   async saveSelectedLaunchConfig(_selected: SelectedLaunchConfig) {
     await pause(20);
+  },
+  async preflightCheck(_projectDir: string, _agentId: string, _profileId: string): Promise<PreflightReport> {
+    await pause(40);
+    return {
+      ready: true,
+      diagnostics: [
+        { severity: "pass", label: "Project directory", detail: "Directory exists." },
+        { severity: "warning", label: "Agent binary", detail: "codex not found on PATH." },
+        { severity: "warning", label: "Filesystem enforcement", detail: "Unsupported on windows with greywall." },
+      ],
+    };
   },
   async launchSession(request: LaunchSessionRequest) {
     await pause(120);

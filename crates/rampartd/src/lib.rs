@@ -1,7 +1,8 @@
 use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
 use policy_core::{
-    compile_policy, AgentTool, AuditEvent, AuditEventKind, AuditOutcome, EngineCapabilitySnapshot,
-    Profile, Session, SessionStatus, ViolationEvent,
+    compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent, AuditEventKind,
+    AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot, Profile, Session, SessionStatus,
+    ViolationEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -10,6 +11,309 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+
+// ---------------------------------------------------------------------------
+// Agent adapters
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentAdapter {
+    pub agent_id: String,
+    pub command: String,
+    pub default_args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub terminal_first: bool,
+}
+
+impl AgentAdapter {
+    pub fn for_tool(tool: &AgentTool) -> Self {
+        match tool {
+            AgentTool::ClaudeCode => Self {
+                agent_id: "claude-code".into(),
+                command: "claude".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+            AgentTool::Codex => Self {
+                agent_id: "codex".into(),
+                command: "codex".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+            AgentTool::Cursor => Self {
+                agent_id: "cursor".into(),
+                command: "cursor-agent".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: false,
+            },
+            AgentTool::Copilot => Self {
+                agent_id: "copilot".into(),
+                command: "github-copilot-cli".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: false,
+            },
+            AgentTool::Aider => Self {
+                agent_id: "aider".into(),
+                command: "aider".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+            AgentTool::Goose => Self {
+                agent_id: "goose".into(),
+                command: "goose".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+            AgentTool::OpenCode => Self {
+                agent_id: "opencode".into(),
+                command: "opencode".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+            AgentTool::GeminiCli => Self {
+                agent_id: "gemini".into(),
+                command: "gemini".into(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+            AgentTool::Custom { id, .. } => Self {
+                agent_id: id.clone(),
+                command: id.clone(),
+                default_args: vec![],
+                env: vec![],
+                terminal_first: true,
+            },
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Preflight diagnostics
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PreflightSeverity {
+    Pass,
+    Warning,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreflightDiagnostic {
+    pub severity: PreflightSeverity,
+    pub label: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreflightReport {
+    pub ready: bool,
+    pub diagnostics: Vec<PreflightDiagnostic>,
+}
+
+pub fn run_preflight(
+    project_dir: &str,
+    agent_tool: &AgentTool,
+    profile: &Profile,
+    capabilities: &EngineCapabilitySnapshot,
+) -> PreflightReport {
+    let mut diagnostics = Vec::new();
+
+    // Check project directory exists
+    let project_path = Path::new(project_dir);
+    if project_path.exists() && project_path.is_dir() {
+        diagnostics.push(PreflightDiagnostic {
+            severity: PreflightSeverity::Pass,
+            label: "Project directory".into(),
+            detail: format!("{project_dir} exists and is a directory."),
+        });
+    } else {
+        diagnostics.push(PreflightDiagnostic {
+            severity: PreflightSeverity::Fail,
+            label: "Project directory".into(),
+            detail: format!("{project_dir} does not exist or is not a directory."),
+        });
+    }
+
+    // Check agent binary is on PATH
+    let adapter = AgentAdapter::for_tool(agent_tool);
+    let binary_found = which_exists(&adapter.command);
+    if binary_found {
+        diagnostics.push(PreflightDiagnostic {
+            severity: PreflightSeverity::Pass,
+            label: "Agent binary".into(),
+            detail: format!("{} found on PATH.", adapter.command),
+        });
+    } else {
+        diagnostics.push(PreflightDiagnostic {
+            severity: PreflightSeverity::Fail,
+            label: "Agent binary".into(),
+            detail: format!(
+                "{} not found on PATH. Install the agent or check your PATH.",
+                adapter.command
+            ),
+        });
+    }
+
+    // Terminal-first note
+    if adapter.terminal_first {
+        diagnostics.push(PreflightDiagnostic {
+            severity: PreflightSeverity::Warning,
+            label: "Terminal-first agent".into(),
+            detail: format!(
+                "{} is a terminal-first tool. Rampart will launch it but interaction happens in the agent\u{2019}s own terminal.",
+                adapter.command
+            ),
+        });
+    }
+
+    // Capability warnings
+    let cap_checks: Vec<(&str, CapabilitySupport)> = vec![
+        ("Filesystem enforcement", capabilities.filesystem.enforcement),
+        ("Network enforcement", capabilities.network.enforcement),
+        ("Process enforcement", capabilities.process.enforcement),
+    ];
+    for (label, support) in cap_checks {
+        match support {
+            CapabilitySupport::Unsupported => {
+                diagnostics.push(PreflightDiagnostic {
+                    severity: PreflightSeverity::Warning,
+                    label: label.into(),
+                    detail: format!(
+                        "{label} is unsupported on {} with {}. Policy rules for this domain will not be enforced.",
+                        capabilities.platform, capabilities.engine_name
+                    ),
+                });
+            }
+            CapabilitySupport::Limited => {
+                diagnostics.push(PreflightDiagnostic {
+                    severity: PreflightSeverity::Warning,
+                    label: label.into(),
+                    detail: format!(
+                        "{label} is limited on {} with {}. Some policy rules may not be fully enforced.",
+                        capabilities.platform, capabilities.engine_name
+                    ),
+                });
+            }
+            CapabilitySupport::Supported => {
+                diagnostics.push(PreflightDiagnostic {
+                    severity: PreflightSeverity::Pass,
+                    label: label.into(),
+                    detail: format!("{label} supported."),
+                });
+            }
+        }
+    }
+
+    // Policy/capability compatibility
+    if let Err(errors) = validate_policy_against_capabilities(&profile.policy, capabilities) {
+        for item in &errors.items {
+            diagnostics.push(PreflightDiagnostic {
+                severity: PreflightSeverity::Warning,
+                label: "Policy compatibility".into(),
+                detail: format!("{}: {}", item.field, item.message),
+            });
+        }
+    }
+
+    let ready = !diagnostics
+        .iter()
+        .any(|d| matches!(d.severity, PreflightSeverity::Fail));
+
+    PreflightReport { ready, diagnostics }
+}
+
+fn which_exists(command: &str) -> bool {
+    // On Windows, check common extensions
+    if cfg!(target_os = "windows") {
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in path_var.split(';') {
+                let base = Path::new(dir).join(command);
+                for ext in &["", ".exe", ".cmd", ".bat"] {
+                    let candidate = base.with_extension(ext.trim_start_matches('.'));
+                    if candidate.exists() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    } else {
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in path_var.split(':') {
+                if Path::new(dir).join(command).exists() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Flattened capability items for the UI
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FlatCapabilityItem {
+    pub key: String,
+    pub status: String,
+    pub detail: String,
+}
+
+pub fn flatten_capabilities(snapshot: &EngineCapabilitySnapshot) -> Vec<FlatCapabilityItem> {
+    let support_str = |s: CapabilitySupport| -> &'static str {
+        match s {
+            CapabilitySupport::Supported => "supported",
+            CapabilitySupport::Limited => "partial",
+            CapabilitySupport::Unsupported => "unsupported",
+        }
+    };
+    let detail = |label: &str, s: CapabilitySupport| -> String {
+        match s {
+            CapabilitySupport::Supported => format!("{label} fully supported on {}/{}.", snapshot.platform, snapshot.engine_name),
+            CapabilitySupport::Limited => format!("{label} partially supported on {}/{}. Some gaps may exist.", snapshot.platform, snapshot.engine_name),
+            CapabilitySupport::Unsupported => format!("{label} unsupported on {}/{}. Policy rules will not be enforced.", snapshot.platform, snapshot.engine_name),
+        }
+    };
+
+    vec![
+        FlatCapabilityItem {
+            key: "filesystem_scope".into(),
+            status: support_str(snapshot.filesystem.enforcement).into(),
+            detail: detail("Filesystem scope enforcement", snapshot.filesystem.enforcement),
+        },
+        FlatCapabilityItem {
+            key: "network_egress".into(),
+            status: support_str(snapshot.network.enforcement).into(),
+            detail: detail("Network egress enforcement", snapshot.network.enforcement),
+        },
+        FlatCapabilityItem {
+            key: "process_execution".into(),
+            status: support_str(snapshot.process.enforcement).into(),
+            detail: detail("Process execution enforcement", snapshot.process.enforcement),
+        },
+        FlatCapabilityItem {
+            key: "violation_streaming".into(),
+            status: support_str(snapshot.filesystem.observation).into(),
+            detail: detail("Violation event streaming", snapshot.filesystem.observation),
+        },
+        FlatCapabilityItem {
+            key: "session_termination".into(),
+            status: support_str(snapshot.process.termination).into(),
+            detail: detail("Session termination", snapshot.process.termination),
+        },
+    ]
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LaunchSessionRequest {
@@ -276,22 +580,27 @@ pub struct LocalProcessRunner {
 
 impl LocalProcessRunner {
     fn spawn_session(&mut self, session: &Session) -> Result<ManagedProcess, ProcessRunnerError> {
-        let command = agent_command_name(&session.agent_tool).to_string();
-        let child = Command::new(&command)
-            .current_dir(&session.project_path)
+        let adapter = AgentAdapter::for_tool(&session.agent_tool);
+        let mut cmd = Command::new(&adapter.command);
+        cmd.current_dir(&session.project_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|source| ProcessRunnerError::Spawn {
-                command: command.clone(),
-                source,
-            })?;
+            .stderr(Stdio::null());
+        for arg in &adapter.default_args {
+            cmd.arg(arg);
+        }
+        for (key, value) in &adapter.env {
+            cmd.env(key, value);
+        }
+        let child = cmd.spawn().map_err(|source| ProcessRunnerError::Spawn {
+            command: adapter.command.clone(),
+            source,
+        })?;
         let pid = child.id();
         self.children.insert(session.id.clone(), child);
         Ok(ManagedProcess {
             pid: Some(pid),
-            command,
+            command: adapter.command,
         })
     }
 
@@ -304,20 +613,6 @@ impl LocalProcessRunner {
             session_id: session_id.into(),
             source,
         })
-    }
-}
-
-fn agent_command_name(agent_tool: &AgentTool) -> &str {
-    match agent_tool {
-        AgentTool::Codex => "codex",
-        AgentTool::ClaudeCode => "claude",
-        AgentTool::Cursor => "cursor-agent",
-        AgentTool::Copilot => "github-copilot-cli",
-        AgentTool::Aider => "aider",
-        AgentTool::Goose => "goose",
-        AgentTool::OpenCode => "opencode",
-        AgentTool::GeminiCli => "gemini",
-        AgentTool::Custom { id, .. } => id.as_str(),
     }
 }
 
@@ -344,6 +639,7 @@ pub struct AgentCatalogEntry {
     pub id: String,
     pub label: String,
     pub detail: String,
+    pub terminal_first: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -375,6 +671,7 @@ pub struct LaunchContext {
     pub profiles: Vec<ProfileSummary>,
     pub selected: SelectedLaunchConfig,
     pub capabilities: EngineCapabilitySnapshot,
+    pub capability_items: Vec<FlatCapabilityItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -445,6 +742,12 @@ pub trait ServiceQueryApi {
         &self,
         selected: SelectedLaunchConfig,
     ) -> Result<(), ServiceError>;
+    fn preflight_check(
+        &self,
+        project_dir: &str,
+        agent_id: &str,
+        profile_id: &str,
+    ) -> Result<PreflightReport, ServiceError>;
 }
 
 pub struct RampartService<E = GreywallAdapter> {
@@ -529,6 +832,8 @@ where
     E: EnforcementEngine,
 {
     fn launch_context(&self) -> Result<LaunchContext, ServiceError> {
+        let capabilities = self.daemon.detect_capabilities()?;
+        let capability_items = flatten_capabilities(&capabilities);
         Ok(LaunchContext {
             projects: detect_projects()?,
             agents: default_agents(),
@@ -546,7 +851,8 @@ where
                 })
                 .collect(),
             selected: self.selected.clone(),
-            capabilities: self.daemon.detect_capabilities()?,
+            capabilities,
+            capability_items,
         })
     }
 
@@ -562,6 +868,24 @@ where
         state.selected = selected;
         self.store.save_state(&state)?;
         Ok(())
+    }
+
+    fn preflight_check(
+        &self,
+        project_dir: &str,
+        agent_id: &str,
+        profile_id: &str,
+    ) -> Result<PreflightReport, ServiceError> {
+        let agent_tool = agent_tool_from_id(agent_id);
+        let profile = self
+            .daemon
+            .list_profiles()
+            .iter()
+            .find(|p| p.id == profile_id)
+            .cloned()
+            .ok_or_else(|| ServiceError::Daemon(DaemonError::UnknownProfile(profile_id.into())))?;
+        let capabilities = self.daemon.detect_capabilities()?;
+        Ok(run_preflight(project_dir, &agent_tool, &profile, &capabilities))
     }
 }
 
@@ -610,13 +934,32 @@ fn default_agents() -> Vec<AgentCatalogEntry> {
             id: "codex".into(),
             label: "Codex".into(),
             detail: "OpenAI coding agent launched through Rampart session controls.".into(),
+            terminal_first: true,
         },
         AgentCatalogEntry {
             id: "claude-code".into(),
             label: "Claude Code".into(),
             detail: "Terminal-first Anthropic agent with profile-driven launch.".into(),
+            terminal_first: true,
         },
     ]
+}
+
+fn agent_tool_from_id(id: &str) -> AgentTool {
+    match id {
+        "codex" => AgentTool::Codex,
+        "claude-code" => AgentTool::ClaudeCode,
+        "cursor" => AgentTool::Cursor,
+        "copilot" => AgentTool::Copilot,
+        "aider" => AgentTool::Aider,
+        "goose" => AgentTool::Goose,
+        "opencode" => AgentTool::OpenCode,
+        "gemini" => AgentTool::GeminiCli,
+        other => AgentTool::Custom {
+            id: other.into(),
+            display_name: None,
+        },
+    }
 }
 
 fn default_profiles() -> Vec<Profile> {

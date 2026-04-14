@@ -2,8 +2,8 @@
 
 use engine_greywall::GreywallAdapter;
 use rampartd::{
-    DaemonApi, LaunchSessionRequest, LocalDataStore, RampartService, SelectedLaunchConfig,
-    ServiceQueryApi, SessionEventRecord, SessionHistoryRecord,
+    DaemonApi, LaunchSessionRequest, LocalDataStore, PreflightReport, RampartService,
+    SelectedLaunchConfig, ServiceQueryApi, SessionEventRecord, SessionHistoryRecord,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -107,6 +107,21 @@ fn list_session_history(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn preflight_check(
+    state: State<'_, DesktopDaemonState>,
+    project_dir: String,
+    agent_id: String,
+    profile_id: String,
+) -> Result<PreflightReport, String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .preflight_check(&project_dir, &agent_id, &profile_id)
+        .map_err(|error| error.to_string())
+}
+
 fn build_service() -> Result<RampartService, String> {
     let adapter = GreywallAdapter::discover().map_err(|error| error.to_string())?;
     let root = std::env::current_dir()
@@ -129,6 +144,7 @@ fn main() {
             stop_session,
             stream_session_events,
             list_session_history,
+            preflight_check,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rampart desktop shell");

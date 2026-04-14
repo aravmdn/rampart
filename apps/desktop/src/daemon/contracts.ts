@@ -34,6 +34,7 @@ export type AgentTool = {
   id: string;
   label: string;
   detail: string;
+  terminalFirst: boolean;
 };
 
 export type ProjectSummary = {
@@ -85,6 +86,19 @@ export type SelectedLaunchConfig = {
   profileId: string | null;
 };
 
+export type PreflightSeverity = "pass" | "warning" | "fail";
+
+export type PreflightDiagnostic = {
+  severity: PreflightSeverity;
+  label: string;
+  detail: string;
+};
+
+export type PreflightReport = {
+  ready: boolean;
+  diagnostics: PreflightDiagnostic[];
+};
+
 export type LaunchContext = {
   projects: ProjectSummary[];
   agents: AgentTool[];
@@ -105,6 +119,7 @@ export type SessionHistoryEntry = {
 export type DaemonApi = {
   loadLaunchContext: () => Promise<LaunchContext>;
   saveSelectedLaunchConfig: (selected: SelectedLaunchConfig) => Promise<void>;
+  preflightCheck: (projectDir: string, agentId: string, profileId: string) => Promise<PreflightReport>;
   launchSession: (request: LaunchSessionRequest) => Promise<SessionState>;
   stopSession: (sessionId: string) => Promise<SessionState>;
   streamSessionEvents: (
