@@ -67,11 +67,12 @@
 - Phase 4: CI and headless modes, broader engine support, enterprise controls where justified.
 
 Reference-informed next steps inside those phases:
-- Early Phase 1:
-  - add agent-specific launch adapters and preflight diagnostics
-  - make capability warnings visible before launch
-  - keep launch surface distinct from the active session console
-- Late Phase 1 / Early Phase 2:
+- Early Phase 1 (complete):
+  - agent-specific launch adapters and preflight diagnostics are implemented in rampartd
+  - capability warnings surface before launch; launch is disabled until preflight passes
+  - launcher and session console are separate product states in the desktop shell
+  - terminal-first agent UX is preserved via per-agent adapter flags
+- Late Phase 1 / Early Phase 2 (current focus):
   - persist full session records, not only loose event lists
   - add rule-linked violation explanations with platform-limit notes
   - define a stable audit event taxonomy across engines and agents

@@ -121,13 +121,18 @@ Near-term emphasis is intentionally narrow:
 - Keep policy authoring above raw engine syntax
 - Avoid premature expansion into team admin or generic governance tooling
 
-Reference-guided implementation priorities are now clearer:
+Phase 1 reference-guided priorities are now complete:
 
-- add agent-specific launch adapters and startup diagnostics
-- keep launcher flow, live session flow, and history flow as separate product states
-- surface truthful capability limits before session start
-- mature local session history into a first-class record of launch context, events, and violations
-- keep terminal-first agent UX intact instead of forcing all interaction into a replacement chat client
+- Agent-specific launch adapters and startup diagnostics are implemented in rampartd.
+- Launcher flow and session console flow are separate product states in the desktop shell.
+- Capability limits are surfaced before session start, with launch blocked until preflight passes.
+- Terminal-first agent UX is preserved — Rampart controls enforcement and visibility without replacing the agent's native terminal.
+
+Remaining near-term emphasis:
+
+- Mature local session history into a first-class record of launch context, events, and violations.
+- Add rule-linked violation explanations with platform limitation notes.
+- Define a stable audit event taxonomy across engines and agents.
 
 ## Getting Started
 
