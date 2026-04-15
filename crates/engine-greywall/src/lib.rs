@@ -1,7 +1,8 @@
 use policy_core::{
-    AuditEvent, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
-    FilesystemCapabilitySnapshot, NetworkCapabilitySnapshot, ProcessCapabilitySnapshot,
-    ViolationEvent, ViolationKind,
+    AuditEvent, AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport,
+    EngineCapabilitySnapshot, FilesystemCapabilitySnapshot, NetworkCapabilitySnapshot,
+    PlatformLimitation, ProcessCapabilitySnapshot, ViolationEvent, ViolationExplanation,
+    ViolationKind,
 };
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -31,9 +32,13 @@ pub struct GreywallVersion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawEngineEventKind {
     AllowRead,
+    AllowWrite,
+    AllowExec,
+    AllowNetwork,
     BlockRead,
     BlockWrite,
     BlockExec,
+    BlockNetwork,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,21 +153,30 @@ impl GreywallAdapter {
     fn map_event(&self, event: RawEngineEvent) -> NormalizedEngineEvent {
         let _ = &self.version;
         match event.kind {
-            RawEngineEventKind::AllowRead => NormalizedEngineEvent {
-                audit: AuditEvent {
-                    session_id: event.session_id,
-                    sequence: event.sequence,
-                    occurred_at_ms: event.occurred_at_ms,
-                    kind: AuditEventKind::OperationObserved,
-                    outcome: AuditOutcome::Allowed,
-                    message: format!("Allowed read inside policy scope: {}", event.target),
-                    violation: None,
-                },
-                violation: None,
-            },
-            RawEngineEventKind::BlockRead => blocked_event(event, "read"),
-            RawEngineEventKind::BlockWrite => blocked_event(event, "write"),
-            RawEngineEventKind::BlockExec => blocked_event(event, "execute"),
+            RawEngineEventKind::AllowRead => allowed_event(
+                event,
+                AuditEventKind::FilesystemAllowed,
+                "Allowed read inside policy scope",
+            ),
+            RawEngineEventKind::AllowWrite => allowed_event(
+                event,
+                AuditEventKind::FilesystemAllowed,
+                "Allowed write inside policy scope",
+            ),
+            RawEngineEventKind::AllowExec => allowed_event(
+                event,
+                AuditEventKind::ProcessAllowed,
+                "Allowed process execution inside policy scope",
+            ),
+            RawEngineEventKind::AllowNetwork => allowed_event(
+                event,
+                AuditEventKind::NetworkAllowed,
+                "Allowed network access inside policy scope",
+            ),
+            RawEngineEventKind::BlockRead => blocked_filesystem_event(event, "read"),
+            RawEngineEventKind::BlockWrite => blocked_filesystem_event(event, "write"),
+            RawEngineEventKind::BlockExec => blocked_process_event(event),
+            RawEngineEventKind::BlockNetwork => blocked_network_event(event),
         }
     }
 }
@@ -201,10 +215,52 @@ pub fn parse_blocked_fixture(session_id: &str, raw: &str) -> Result<ViolationEve
         rule_label: fixture.policy_rule_label,
         reason: fixture.reason,
         platform_note: fixture.platform_note,
+        explanation: None,
     })
 }
 
-fn blocked_event(event: RawEngineEvent, action: &str) -> NormalizedEngineEvent {
+fn allowed_event(
+    event: RawEngineEvent,
+    kind: AuditEventKind,
+    label: &str,
+) -> NormalizedEngineEvent {
+    NormalizedEngineEvent {
+        audit: AuditEvent {
+            session_id: event.session_id,
+            sequence: event.sequence,
+            occurred_at_ms: event.occurred_at_ms,
+            kind,
+            category: AuditEventCategory::PolicyEnforcement,
+            outcome: AuditOutcome::Allowed,
+            message: format!("{label}: {}", event.target),
+            violation: None,
+        },
+        violation: None,
+    }
+}
+
+fn greywall_platform_limitation() -> PlatformLimitation {
+    PlatformLimitation {
+        platform: current_platform_name().into(),
+        engine: ENGINE_ID.into(),
+        detail: "greywall is the reference adapter only. Windows runtime enforcement support \
+                 remains unverified."
+            .into(),
+    }
+}
+
+fn blocked_filesystem_event(event: RawEngineEvent, action: &str) -> NormalizedEngineEvent {
+    let explanation = ViolationExplanation {
+        rule_description: "Access outside the allowed project roots is denied by the filesystem \
+                            scope policy."
+            .into(),
+        platform_limitation: Some(greywall_platform_limitation()),
+        remediation_hint: Some(
+            "Adjust the profile's filesystem.readable_roots or filesystem.writable_roots to \
+             include the target path."
+                .into(),
+        ),
+    };
     let violation = ViolationEvent {
         session_id: event.session_id.clone(),
         sequence: event.sequence,
@@ -212,22 +268,104 @@ fn blocked_event(event: RawEngineEvent, action: &str) -> NormalizedEngineEvent {
         kind: ViolationKind::Filesystem,
         action: action.into(),
         target: event.target.clone(),
-        rule_id: "fs.read.project-root-only".into(),
-        rule_label: "Read access limited to selected project root.".into(),
+        rule_id: "fs.scope.project-root-only".into(),
+        rule_label: "Filesystem access limited to selected project root.".into(),
         reason: "Policy denied access outside allowed project roots.".into(),
         platform_note: Some(
-            "greywall is reference adapter only. Windows runtime support remains unverified.".into(),
+            "greywall is the reference adapter only. Windows runtime support remains unverified."
+                .into(),
         ),
+        explanation: Some(explanation),
     };
-
     NormalizedEngineEvent {
         audit: AuditEvent {
             session_id: event.session_id,
             sequence: event.sequence,
             occurred_at_ms: event.occurred_at_ms,
-            kind: AuditEventKind::ViolationRecorded,
+            kind: AuditEventKind::FilesystemBlocked,
+            category: AuditEventCategory::PolicyEnforcement,
             outcome: AuditOutcome::Blocked,
-            message: format!("Blocked {action}: {}", event.target),
+            message: format!("Blocked filesystem {action}: {}", event.target),
+            violation: Some(violation.clone()),
+        },
+        violation: Some(violation),
+    }
+}
+
+fn blocked_process_event(event: RawEngineEvent) -> NormalizedEngineEvent {
+    let explanation = ViolationExplanation {
+        rule_description: "Process execution outside the allowed command list is denied by the \
+                            process policy."
+            .into(),
+        platform_limitation: Some(greywall_platform_limitation()),
+        remediation_hint: Some(
+            "Add the command to the profile's process.allowed_commands list.".into(),
+        ),
+    };
+    let violation = ViolationEvent {
+        session_id: event.session_id.clone(),
+        sequence: event.sequence,
+        occurred_at_ms: event.occurred_at_ms,
+        kind: ViolationKind::Process,
+        action: "execute".into(),
+        target: event.target.clone(),
+        rule_id: "process.scope.allowed-commands-only".into(),
+        rule_label: "Process execution limited to allowed commands list.".into(),
+        reason: "Policy denied process execution not in allowed commands list.".into(),
+        platform_note: Some(
+            "greywall is the reference adapter only. Windows runtime support remains unverified."
+                .into(),
+        ),
+        explanation: Some(explanation),
+    };
+    NormalizedEngineEvent {
+        audit: AuditEvent {
+            session_id: event.session_id,
+            sequence: event.sequence,
+            occurred_at_ms: event.occurred_at_ms,
+            kind: AuditEventKind::ProcessBlocked,
+            category: AuditEventCategory::PolicyEnforcement,
+            outcome: AuditOutcome::Blocked,
+            message: format!("Blocked process execution: {}", event.target),
+            violation: Some(violation.clone()),
+        },
+        violation: Some(violation),
+    }
+}
+
+fn blocked_network_event(event: RawEngineEvent) -> NormalizedEngineEvent {
+    let explanation = ViolationExplanation {
+        rule_description: "Network access to this host is denied by the network policy.".into(),
+        platform_limitation: Some(greywall_platform_limitation()),
+        remediation_hint: Some(
+            "Add the host to the profile's network.allowed_hosts list.".into(),
+        ),
+    };
+    let violation = ViolationEvent {
+        session_id: event.session_id.clone(),
+        sequence: event.sequence,
+        occurred_at_ms: event.occurred_at_ms,
+        kind: ViolationKind::Network,
+        action: "network".into(),
+        target: event.target.clone(),
+        rule_id: "network.egress.allowed-hosts-only".into(),
+        rule_label: "Network access limited to allowed hosts.".into(),
+        reason: "Policy denied network access to host not in allowed list.".into(),
+        platform_note: Some(
+            "greywall is the reference adapter only. Windows runtime support remains unverified."
+                .into(),
+        ),
+        explanation: Some(explanation),
+    };
+    NormalizedEngineEvent {
+        audit: AuditEvent {
+            session_id: event.session_id,
+            sequence: event.sequence,
+            occurred_at_ms: event.occurred_at_ms,
+            kind: AuditEventKind::NetworkBlocked,
+            category: AuditEventCategory::PolicyEnforcement,
+            outcome: AuditOutcome::Blocked,
+            message: format!("Blocked network access: {}", event.target),
             violation: Some(violation.clone()),
         },
         violation: Some(violation),
@@ -317,7 +455,7 @@ mod tests {
         });
 
         let violation = batch.violation.expect("violation required");
-        assert_eq!(violation.rule_id, "fs.read.project-root-only");
+        assert_eq!(violation.rule_id, "fs.scope.project-root-only");
         assert!(violation.platform_note.is_some());
     }
 }

@@ -11,6 +11,7 @@ import type {
   SessionHistoryEntry,
   SessionState,
   ViolationEvent,
+  ViolationExplanation,
 } from "./contracts";
 
 export const mockProjects = [
@@ -86,20 +87,36 @@ function buildAudit(sessionId: string): AuditEvent[] {
     {
       id: `${sessionId}-audit-launch`,
       kind: "launch_succeeded",
+      category: "session_lifecycle",
       message: "Session launched through mocked daemon contract.",
     },
     {
       id: `${sessionId}-audit-allow`,
-      kind: "allow_observed",
+      kind: "filesystem_allowed",
+      category: "policy_enforcement",
       message: "Allowed read inside project scope: C:\\projects\\rampart\\README.md",
     },
     {
       id: `${sessionId}-audit-block`,
-      kind: "block_observed",
-      message: "Blocked read outside selected project roots.",
+      kind: "filesystem_blocked",
+      category: "policy_enforcement",
+      message: "Blocked filesystem read: C:\\Users\\dev\\.ssh\\config",
     },
   ];
 }
+
+const mockExplanation: ViolationExplanation = {
+  ruleDescription:
+    "Access outside the allowed project roots is denied by the filesystem scope policy.",
+  platformLimitation: {
+    platform: "windows",
+    engine: "rampart-windows-runtime-mock",
+    detail:
+      "Windows runtime enforcement support is not yet active. This violation was recorded by the mock adapter.",
+  },
+  remediationHint:
+    "Adjust the profile's filesystem.readable_roots to include the target path if access is required.",
+};
 
 function buildViolations(sessionId: string): ViolationEvent[] {
   return [
@@ -107,8 +124,12 @@ function buildViolations(sessionId: string): ViolationEvent[] {
       id: `${sessionId}-violation-1`,
       operation: "read",
       target: "C:\\Users\\dev\\.ssh\\config",
-      ruleId: "project_scope",
+      ruleId: "fs.scope.project-root-only",
+      ruleLabel: "Filesystem access limited to selected project root.",
       message: "Policy denied read outside allowed project roots.",
+      platformNote:
+        "greywall is the reference adapter only. Windows runtime support remains unverified.",
+      explanation: mockExplanation,
     },
   ];
 }
@@ -180,6 +201,15 @@ export const mockDaemonClient: DaemonApi = {
   },
   async listSessionHistory(): Promise<SessionHistoryEntry[]> {
     await pause(40);
-    return [];
+    return Array.from(sessions.entries()).map(([id, session]) => ({
+      session: {
+        ...session,
+        startedAtMs: Date.now() - 60_000,
+        endedAtMs: session.status === "stopped" ? Date.now() : null,
+      },
+      capabilitySnapshot: capabilitySnapshot,
+      events: buildAudit(id),
+      violations: buildViolations(id),
+    }));
   },
 };

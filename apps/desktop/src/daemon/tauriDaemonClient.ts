@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AuditEvent,
   DaemonApi,
   LaunchContext,
   LaunchSessionRequest,
@@ -43,6 +44,24 @@ type RawLaunchContext = {
   }[];
 };
 
+type RawViolation = {
+  action: "read" | "write" | "execute" | "network";
+  target: string;
+  rule_id: string;
+  rule_label: string;
+  reason: string;
+  platform_note: string | null;
+  explanation: {
+    rule_description: string;
+    platform_limitation: {
+      platform: string;
+      engine: string;
+      detail: string;
+    } | null;
+    remediation_hint: string | null;
+  } | null;
+};
+
 type RawHistoryEntry = {
   session: {
     id: string;
@@ -52,20 +71,20 @@ type RawHistoryEntry = {
     started_at_ms: number;
     ended_at_ms: number | null;
   };
+  capability_snapshot: {
+    engine_name: string;
+    platform: string;
+    capability_items?: { key: string; status: string; detail: string }[];
+  } | null;
   events: {
     kind: string;
+    category: string;
     message: string;
     session_id: string;
     sequence: number;
     occurred_at_ms: number;
   }[];
-  violations: {
-    id?: string;
-    action: "read" | "write" | "execute" | "network";
-    target: string;
-    rule_id: string;
-    reason: string;
-  }[];
+  violations: RawViolation[];
 };
 
 function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
@@ -123,6 +142,31 @@ function mapSessionState(raw: {
   };
 }
 
+function mapAuditKind(kind: string): AuditEvent["kind"] {
+  const map: Record<string, AuditEvent["kind"]> = {
+    "session-launched": "launch_succeeded",
+    "session-ended": "session_stopped",
+    "filesystem-allowed": "filesystem_allowed",
+    "filesystem-blocked": "filesystem_blocked",
+    "network-allowed": "network_allowed",
+    "network-blocked": "network_blocked",
+    "process-allowed": "process_allowed",
+    "process-blocked": "process_blocked",
+    "violation-recorded": "block_observed",
+    "operation-observed": "allow_observed",
+  };
+  return map[kind] ?? "allow_observed";
+}
+
+function mapAuditCategory(category: string): AuditEvent["category"] {
+  const map: Record<string, AuditEvent["category"]> = {
+    "session-lifecycle": "session_lifecycle",
+    "policy-enforcement": "policy_enforcement",
+    "system-alert": "system_alert",
+  };
+  return map[category] ?? "policy_enforcement";
+}
+
 export const tauriDaemonClient: DaemonApi = {
   async loadLaunchContext() {
     const response = await invoke<RawLaunchContext>("load_launch_context");
@@ -167,14 +211,21 @@ export const tauriDaemonClient: DaemonApi = {
         startedAtMs: entry.session.started_at_ms,
         endedAtMs: entry.session.ended_at_ms,
       },
+      capabilitySnapshot: entry.capability_snapshot
+        ? {
+            engineName: entry.capability_snapshot.engine_name,
+            platform: entry.capability_snapshot.platform as "windows" | "macos" | "linux",
+            capabilities: (entry.capability_snapshot.capability_items ?? []).map((item) => ({
+              key: item.key as any,
+              status: item.status as any,
+              detail: item.detail,
+            })),
+          }
+        : null,
       events: entry.events.map((event, index) => ({
         id: `${entry.session.id}-event-${index}`,
-        kind:
-          event.kind === "violation-recorded"
-            ? "block_observed"
-            : event.kind === "session-ended"
-              ? "session_stopped"
-              : "allow_observed",
+        kind: mapAuditKind(event.kind),
+        category: mapAuditCategory(event.category),
         message: event.message,
       })),
       violations: entry.violations.map((violation, index) => ({
@@ -182,7 +233,16 @@ export const tauriDaemonClient: DaemonApi = {
         operation: violation.action,
         target: violation.target,
         ruleId: violation.rule_id,
+        ruleLabel: violation.rule_label ?? "",
         message: violation.reason,
+        platformNote: violation.platform_note ?? null,
+        explanation: violation.explanation
+          ? {
+              ruleDescription: violation.explanation.rule_description,
+              platformLimitation: violation.explanation.platform_limitation ?? null,
+              remediationHint: violation.explanation.remediation_hint ?? null,
+            }
+          : null,
       })),
     }));
   },

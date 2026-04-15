@@ -60,10 +60,33 @@ export type SessionState = {
   projectPath: string | null;
 };
 
+export type AuditEventCategory = "session_lifecycle" | "policy_enforcement" | "system_alert";
+
 export type AuditEvent = {
   id: string;
-  kind: "launch_succeeded" | "allow_observed" | "block_observed" | "session_stopped";
+  kind:
+    | "launch_succeeded"
+    | "allow_observed"
+    | "block_observed"
+    | "session_stopped"
+    | "filesystem_allowed"
+    | "filesystem_blocked"
+    | "network_allowed"
+    | "network_blocked"
+    | "process_allowed"
+    | "process_blocked";
+  category: AuditEventCategory;
   message: string;
+};
+
+export type ViolationExplanation = {
+  ruleDescription: string;
+  platformLimitation: {
+    platform: string;
+    engine: string;
+    detail: string;
+  } | null;
+  remediationHint: string | null;
 };
 
 export type ViolationEvent = {
@@ -71,7 +94,10 @@ export type ViolationEvent = {
   operation: "read" | "write" | "execute" | "network";
   target: string;
   ruleId: string;
+  ruleLabel: string;
   message: string;
+  platformNote: string | null;
+  explanation: ViolationExplanation | null;
 };
 
 export type LaunchSessionRequest = {
@@ -112,6 +138,7 @@ export type SessionHistoryEntry = {
     startedAtMs: number;
     endedAtMs: number | null;
   };
+  capabilitySnapshot: EngineCapabilitySnapshot | null;
   events: AuditEvent[];
   violations: ViolationEvent[];
 };

@@ -1,8 +1,8 @@
 use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
 use policy_core::{
-    compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent, AuditEventKind,
-    AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot, Profile, Session, SessionStatus,
-    ViolationEvent,
+    compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
+    AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
+    Profile, Session, SessionStatus, ViolationEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -342,6 +342,7 @@ pub struct RampartDaemon<E = GreywallAdapter> {
     profiles: Vec<Profile>,
     sessions: HashMap<String, Session>,
     events: HashMap<String, VecDeque<SessionEventRecord>>,
+    capability_snapshots: HashMap<String, EngineCapabilitySnapshot>,
     active_processes: HashMap<String, ManagedProcess>,
     next_session_id: u64,
 }
@@ -361,6 +362,7 @@ where
             profiles,
             sessions: HashMap::new(),
             events: HashMap::new(),
+            capability_snapshots: HashMap::new(),
             active_processes: HashMap::new(),
             next_session_id: 1,
         }
@@ -417,8 +419,11 @@ where
             }
         }
 
+        let capability_snapshot = self.capability_snapshots.get(session_id).cloned();
+
         Ok(SessionHistoryRecord {
             session,
+            capability_snapshot,
             events: audit,
             violations,
         })
@@ -451,6 +456,8 @@ where
         self.next_session_id += 1;
 
         let started_at_ms = now_ms();
+        let snapshot = self.engine.capability_snapshot();
+        self.capability_snapshots.insert(session_id.clone(), snapshot);
 
         let session = Session {
             id: session_id.clone(),
@@ -473,6 +480,7 @@ where
                         sequence: 1,
                         occurred_at_ms: started_at_ms,
                         kind: AuditEventKind::SessionLaunched,
+                        category: AuditEventCategory::SessionLifecycle,
                         outcome: AuditOutcome::Info,
                         message: format!(
                             "Session launched through Rampart daemon. pid={}",
@@ -493,6 +501,7 @@ where
                         sequence: 1,
                         occurred_at_ms: started_at_ms,
                         kind: AuditEventKind::AlertRaised,
+                        category: AuditEventCategory::SystemAlert,
                         outcome: AuditOutcome::Error,
                         message: format!("Session launch failed: {error}"),
                         violation: None,
@@ -536,6 +545,7 @@ where
                 sequence: next_sequence,
                 occurred_at_ms: ended_at_ms,
                 kind: AuditEventKind::SessionEnded,
+                category: AuditEventCategory::SessionLifecycle,
                 outcome: AuditOutcome::Info,
                 message: "Session stopped by daemon.".into(),
                 violation: None,
@@ -677,6 +687,9 @@ pub struct LaunchContext {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionHistoryRecord {
     pub session: Session,
+    /// Capability snapshot captured at session launch time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_snapshot: Option<EngineCapabilitySnapshot>,
     pub events: Vec<AuditEvent>,
     pub violations: Vec<ViolationEvent>,
 }

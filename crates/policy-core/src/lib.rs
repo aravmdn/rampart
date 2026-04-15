@@ -19,6 +19,22 @@ pub enum CapabilitySupport {
     Supported,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlatformLimitation {
+    pub platform: String,
+    pub engine: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ViolationExplanation {
+    pub rule_description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_limitation: Option<PlatformLimitation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remediation_hint: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ValidationErrorCode {
@@ -518,6 +534,8 @@ pub struct ViolationEvent {
     pub rule_label: String,
     pub reason: String,
     pub platform_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<ViolationExplanation>,
 }
 
 impl ViolationEvent {
@@ -571,12 +589,34 @@ impl ViolationEvent {
     }
 }
 
+/// Broad category for filtering and display. Serialized as kebab-case.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuditEventCategory {
+    SessionLifecycle,
+    #[default]
+    PolicyEnforcement,
+    SystemAlert,
+}
+
+/// Specific event kind. Domain-specific variants (Filesystem*, Network*, Process*)
+/// are preferred for new events; the generic variants are kept for compatibility
+/// with persisted records written before the taxonomy was expanded.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum AuditEventKind {
+    // Session lifecycle
     SessionLaunched,
     SessionEnded,
     PolicyCompiled,
+    // Domain-specific operation outcomes (preferred)
+    FilesystemAllowed,
+    FilesystemBlocked,
+    NetworkAllowed,
+    NetworkBlocked,
+    ProcessAllowed,
+    ProcessBlocked,
+    // Generic fallbacks (kept for backward compatibility)
     OperationObserved,
     ViolationRecorded,
     AlertRaised,
@@ -597,6 +637,8 @@ pub struct AuditEvent {
     pub sequence: u64,
     pub occurred_at_ms: u64,
     pub kind: AuditEventKind,
+    #[serde(default)]
+    pub category: AuditEventCategory,
     pub outcome: AuditOutcome,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
