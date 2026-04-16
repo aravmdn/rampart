@@ -847,12 +847,15 @@ where
     fn launch_context(&self) -> Result<LaunchContext, ServiceError> {
         let capabilities = self.daemon.detect_capabilities()?;
         let capability_items = flatten_capabilities(&capabilities);
+        let project_root = detect_repo_root()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| r"C:\projects\rampart".into());
+        let profiles =
+            profiles_for_agent(self.selected.agent_id.as_deref(), &project_root);
         Ok(LaunchContext {
             projects: detect_projects()?,
             agents: default_agents(),
-            profiles: self
-                .daemon
-                .list_profiles()
+            profiles: profiles
                 .iter()
                 .map(|profile| ProfileSummary {
                     id: profile.id.clone(),
@@ -890,12 +893,22 @@ where
         profile_id: &str,
     ) -> Result<PreflightReport, ServiceError> {
         let agent_tool = agent_tool_from_id(agent_id);
-        let profile = self
-            .daemon
-            .list_profiles()
+        // Search agent-specific presets first, then the full merged list on the daemon.
+        let project_root = detect_repo_root()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| r"C:\projects\rampart".into());
+        let agent_profiles = profiles_for_agent(Some(agent_id), &project_root);
+        let profile = agent_profiles
             .iter()
             .find(|p| p.id == profile_id)
             .cloned()
+            .or_else(|| {
+                self.daemon
+                    .list_profiles()
+                    .iter()
+                    .find(|p| p.id == profile_id)
+                    .cloned()
+            })
             .ok_or_else(|| ServiceError::Daemon(DaemonError::UnknownProfile(profile_id.into())))?;
         let capabilities = self.daemon.detect_capabilities()?;
         Ok(run_preflight(project_dir, &agent_tool, &profile, &capabilities))
@@ -976,11 +989,34 @@ fn agent_tool_from_id(id: &str) -> AgentTool {
 }
 
 fn default_profiles() -> Vec<Profile> {
-    policy_core::desktop_profile_presets(
-        &detect_repo_root()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|_| r"C:\projects\rampart".into()),
-    )
+    let root = detect_repo_root()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| r"C:\projects\rampart".into());
+    // Merge all agent-specific presets so launch_session can find any profile by ID.
+    let mut all: Vec<Profile> = vec![];
+    for tool in &[
+        AgentTool::ClaudeCode,
+        AgentTool::Codex,
+        AgentTool::Aider,
+    ] {
+        all.extend(policy_core::agent_profile_presets(tool, &root));
+    }
+    all.extend(policy_core::desktop_profile_presets(&root));
+    all
+}
+
+/// Profiles to show in the launcher for a given agent selection.
+fn profiles_for_agent(agent_id: Option<&str>, project_root: &str) -> Vec<Profile> {
+    match agent_id {
+        Some(id) => {
+            let tool = agent_tool_from_id(id);
+            let presets = policy_core::agent_profile_presets(&tool, project_root);
+            // agent_profile_presets falls back to generic when there are no agent-specific
+            // presets, so we always get a non-empty list.
+            presets
+        }
+        None => policy_core::desktop_profile_presets(project_root),
+    }
 }
 
 fn slugify(value: &str) -> String {

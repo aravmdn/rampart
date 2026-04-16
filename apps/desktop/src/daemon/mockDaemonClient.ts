@@ -34,7 +34,34 @@ export const mockAgents: AgentTool[] = [
   },
 ];
 
-const profiles: ProfileSummary[] = [
+const allProfilePresets: Record<string, ProfileSummary[]> = {
+  "claude-code": [
+    {
+      id: "claude-code.standard",
+      displayName: "Claude Code Standard",
+      detail: "Project read/write, Claude config readable, Anthropic API allowed.",
+    },
+    {
+      id: "claude-code.strict",
+      displayName: "Claude Code Strict",
+      detail: "Project read/write only. Network denied. Child processes denied except git.",
+    },
+  ],
+  codex: [
+    {
+      id: "codex.standard",
+      displayName: "Codex Standard",
+      detail: "Project read/write, OpenAI API allowed. git, node, npm permitted.",
+    },
+    {
+      id: "codex.strict",
+      displayName: "Codex Strict",
+      detail: "Project read/write only. Network denied. Only git permitted.",
+    },
+  ],
+};
+
+const genericProfiles: ProfileSummary[] = [
   {
     id: "windows-safe",
     displayName: "Windows Safe",
@@ -46,6 +73,13 @@ const profiles: ProfileSummary[] = [
     detail: "Project read only outside src. Child process creation denied.",
   },
 ];
+
+function profilesForAgent(agentId: string | null): ProfileSummary[] {
+  if (agentId && allProfilePresets[agentId]) {
+    return allProfilePresets[agentId]!;
+  }
+  return genericProfiles;
+}
 
 const capabilitySnapshot: EngineCapabilitySnapshot = {
   engineName: "rampart-windows-runtime-mock",
@@ -134,9 +168,12 @@ function buildViolations(sessionId: string): ViolationEvent[] {
   ];
 }
 
+let _selectedAgentId: string | null = mockAgents[0]?.id ?? null;
+
 export const mockDaemonClient: DaemonApi = {
   async loadLaunchContext(): Promise<LaunchContext> {
     await pause(80);
+    const profiles = profilesForAgent(_selectedAgentId);
     return {
       projects: mockProjects.map((project) => ({
         ...project,
@@ -146,14 +183,15 @@ export const mockDaemonClient: DaemonApi = {
       profiles,
       selected: {
         projectPath: mockProjects[0]?.path ?? null,
-        agentId: mockAgents[0]?.id ?? null,
+        agentId: _selectedAgentId,
         profileId: profiles[0]?.id ?? null,
       },
       capabilities: capabilitySnapshot,
     };
   },
-  async saveSelectedLaunchConfig(_selected: SelectedLaunchConfig) {
+  async saveSelectedLaunchConfig(selected: SelectedLaunchConfig) {
     await pause(20);
+    _selectedAgentId = selected.agentId;
   },
   async preflightCheck(_projectDir: string, _agentId: string, _profileId: string): Promise<PreflightReport> {
     await pause(40);
