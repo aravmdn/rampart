@@ -36,3 +36,16 @@ export type ViolationView = {
   policyRuleLabel: string;
   platformNote?: string;
 };
+
+export type HistorySessionView = {
+  id: string;
+  startedAt: string;
+  duration: string;
+  agentId: string;
+  profileId: string;
+  projectPath: string;
+  eventCount: number;
+  violationCount: number;
+  events: EventView[];
+  violations: ViolationView[];
+};

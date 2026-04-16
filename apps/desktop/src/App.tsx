@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import {
   CapabilityPanel,
   EventList,
+  HistoryDetailPanel,
+  HistoryList,
   PickerSection,
   SessionStatusPanel,
   ViolationList,
   explainViolation,
   type CapabilityView,
   type EventView,
+  type HistorySessionView,
   type OptionItem,
   type SessionStatusView,
   type ViolationView,
@@ -26,7 +29,7 @@ import {
   type SessionHistoryEntry,
 } from "./daemon/contracts";
 
-type AppView = "launcher" | "session";
+type AppView = "launcher" | "session" | "history";
 
 function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] {
   const labels: Record<string, string> = {
@@ -48,6 +51,42 @@ function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] 
 function hasUnsupported(snapshot: EngineCapabilitySnapshot | null): boolean {
   if (!snapshot) return false;
   return snapshot.capabilities.some((c) => c.status === "unsupported");
+}
+
+function formatMs(ms: number): string {
+  return new Date(ms).toLocaleString();
+}
+
+function formatDuration(startMs: number, endMs: number | null): string {
+  if (endMs === null) return "ongoing";
+  const secs = Math.round((endMs - startMs) / 1000);
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+function toHistorySessionView(
+  entry: SessionHistoryEntry,
+  explainViolationFn: (v: { operation: string; target: string; ruleId?: string; ruleLabel?: string; platformNote?: string | null }) => string,
+): HistorySessionView {
+  return {
+    id: entry.session.id ?? "unknown",
+    startedAt: formatMs(entry.session.startedAtMs),
+    duration: formatDuration(entry.session.startedAtMs, entry.session.endedAtMs),
+    agentId: entry.session.agentId ?? "unknown",
+    profileId: entry.session.profileId ?? "unknown",
+    projectPath: entry.session.projectPath ?? "",
+    eventCount: entry.events.length,
+    violationCount: entry.violations.length,
+    events: entry.events.map((e) => ({ id: e.id, label: e.kind, message: e.message })),
+    violations: entry.violations.map((v) => ({
+      id: v.id,
+      title: `${v.operation} blocked`,
+      detail: explainViolationFn(v),
+      policyRuleId: v.ruleId,
+      policyRuleLabel: v.ruleLabel ?? "Project scope guard",
+      platformNote: v.platformNote ?? undefined,
+    })),
+  };
 }
 
 type AppProps = {
@@ -74,6 +113,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [events, setEvents] = useState<EventView[]>([]);
   const [violations, setViolations] = useState<ViolationView[]>([]);
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -138,6 +178,10 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   }));
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);
+
+  const historySessions: HistorySessionView[] = history.map((entry) =>
+    toHistorySessionView(entry, explainViolation),
+  );
 
   async function handleLaunch() {
     const selectedProject = projects.find((project) => project.id === projectId);
@@ -208,6 +252,51 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setSession({ id: null, status: "idle", projectPath: null, profileName: null, agentName: null });
     setEvents([]);
     setViolations([]);
+  }
+
+  // ── History view ───────────────────────────────────────────────────
+  if (view === "history") {
+    const selectedHistorySession = selectedHistoryId
+      ? historySessions.find((s) => s.id === selectedHistoryId) ?? null
+      : null;
+
+    return (
+      <main className="shell">
+        <section className="panel hero">
+          <p className="eyebrow">Rampart session history</p>
+          <h1>Session history</h1>
+          <p className="muted">
+            Inspect past sessions, blocked actions, and audit events.
+          </p>
+          <button className="secondary-button" type="button" onClick={() => { setView("launcher"); setSelectedHistoryId(null); }}>
+            Back to launcher
+          </button>
+        </section>
+
+        <div className="columns">
+          <div className="column">
+            <HistoryList
+              sessions={historySessions}
+              selectedId={selectedHistoryId}
+              onSelect={setSelectedHistoryId}
+            />
+          </div>
+
+          <div className="column">
+            {selectedHistorySession ? (
+              <HistoryDetailPanel
+                session={selectedHistorySession}
+                onBack={() => setSelectedHistoryId(null)}
+              />
+            ) : (
+              <section className="panel">
+                <p className="muted">Select a session to inspect its events and violations.</p>
+              </section>
+            )}
+          </div>
+        </div>
+      </main>
+    );
   }
 
   // ── Launcher view ──────────────────────────────────────────────────
@@ -314,20 +403,29 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
               {history.length === 0 ? (
                 <p className="muted">No persisted sessions yet.</p>
               ) : (
-                <ul className="plain-list">
-                  {history.map((entry) => (
-                    <li key={entry.session.id}>
-                      <strong>{entry.session.id}</strong>
-                      <div className="muted">{entry.session.projectPath}</div>
-                      {entry.events[0] ? <div>{entry.events[0].message}</div> : null}
-                      {entry.violations[0] ? (
-                        <div className="muted">
-                          Latest block: {entry.violations[0].target} ({entry.violations[0].ruleId})
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="plain-list">
+                    {history.slice(0, 3).map((entry) => (
+                      <li key={entry.session.id}>
+                        <strong>{entry.session.id}</strong>
+                        <div className="muted">{entry.session.projectPath}</div>
+                        {entry.events[0] ? <div>{entry.events[0].message}</div> : null}
+                        {entry.violations[0] ? (
+                          <div className="muted">
+                            Latest block: {entry.violations[0].target} ({entry.violations[0].ruleId})
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setView("history")}
+                  >
+                    View all history
+                  </button>
+                </>
               )}
             </section>
           </div>

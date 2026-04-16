@@ -2,6 +2,7 @@ export { StatusBadge, type StatusBadgeTone } from "./components/StatusBadge";
 export type {
   CapabilityView,
   EventView,
+  HistorySessionView,
   OptionItem,
   SessionStatus,
   SessionStatusView,
@@ -10,6 +11,8 @@ export type {
 export {
   CapabilityPanel,
   EventList,
+  HistoryDetailPanel,
+  HistoryList,
   PickerSection,
   SessionStatusPanel,
   ViolationList,

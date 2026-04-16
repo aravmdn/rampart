@@ -1,7 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { DaemonApi } from "./daemon/contracts";
+
+afterEach(cleanup);
 
 describe("desktop shell", () => {
   it("shows blocked file read explanation after launch", async () => {
@@ -141,5 +144,76 @@ describe("desktop shell", () => {
     expect(
       screen.getByText(/Blocked read on C:\\Users\\dev\\.ssh\\config/),
     ).toBeInTheDocument();
+  });
+
+  it("navigates to history view and shows session detail", async () => {
+    const client: DaemonApi = {
+      loadLaunchContext: vi.fn().mockResolvedValue({
+        projects: [{ id: "proj-1", label: "Project", path: "C:\\projects\\test", source: "detected" }],
+        agents: [{ id: "claude-code", label: "Claude Code", detail: "Anthropic agent.", terminalFirst: true }],
+        profiles: [{ id: "claude-code.standard", displayName: "Claude Code Standard", detail: "Standard profile." }],
+        selected: { projectPath: "C:\\projects\\test", agentId: "claude-code", profileId: "claude-code.standard" },
+        capabilities: { engineName: "mock", platform: "windows", capabilities: [] },
+      }),
+      saveSelectedLaunchConfig: vi.fn().mockResolvedValue(undefined),
+      preflightCheck: vi.fn().mockResolvedValue({ ready: true, diagnostics: [] }),
+      launchSession: vi.fn().mockResolvedValue({ id: "s1", status: "active", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
+      stopSession: vi.fn().mockResolvedValue({ id: "s1", status: "stopped", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
+      streamSessionEvents: vi.fn().mockResolvedValue({ audit: [], violations: [] }),
+      listSessionHistory: vi.fn().mockResolvedValue([
+        {
+          session: {
+            id: "hist-session-1",
+            status: "stopped",
+            profileId: "claude-code.standard",
+            agentId: "claude-code",
+            projectPath: "C:\\projects\\test",
+            startedAtMs: 1700000000000,
+            endedAtMs: 1700000030000,
+          },
+          capabilitySnapshot: null,
+          events: [{ id: "e1", kind: "session_stopped", category: "session_lifecycle", message: "Session ended normally." }],
+          violations: [
+            {
+              id: "v1",
+              operation: "read",
+              target: "C:\\Users\\dev\\.ssh\\id_rsa",
+              ruleId: "fs.scope.blocked",
+              ruleLabel: "Filesystem scope",
+              message: "Read blocked outside project root.",
+              platformNote: null,
+              explanation: null,
+            },
+          ],
+        },
+      ]),
+    };
+
+    render(<App daemonClient={client} />);
+
+    // Launcher loads and shows recent history
+    expect(await screen.findByText("Recent History")).toBeInTheDocument();
+    expect(screen.getByText("hist-session-1")).toBeInTheDocument();
+
+    // Click "View all history"
+    const viewAll = await screen.findByRole("button", { name: "View all history" });
+    fireEvent.click(viewAll);
+
+    // History view shows the session list
+    expect(await screen.findByText("Session History")).toBeInTheDocument();
+    expect(await screen.findByText("Rampart session history")).toBeInTheDocument();
+
+    // Click "View" on the session
+    const viewBtn = await screen.findByRole("button", { name: "View" });
+    fireEvent.click(viewBtn);
+
+    // Detail panel shows session info and violation
+    expect(await screen.findByText("Session Detail")).toBeInTheDocument();
+    expect(screen.getByText(/read blocked/)).toBeInTheDocument();
+
+    // Back to history list
+    const backToHistory = screen.getByRole("button", { name: "Back to history" });
+    fireEvent.click(backToHistory);
+    expect(screen.queryByText("Session Detail")).not.toBeInTheDocument();
   });
 });

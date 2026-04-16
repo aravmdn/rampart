@@ -1,6 +1,7 @@
 import type {
   CapabilityView,
   EventView,
+  HistorySessionView,
   OptionItem,
   SessionStatusView,
   ViolationView,
@@ -153,5 +154,80 @@ export function ViolationList({ violations }: ViolationListProps) {
         </ul>
       )}
     </section>
+  );
+}
+
+type HistoryListProps = {
+  sessions: HistorySessionView[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+};
+
+export function HistoryList({ sessions, selectedId, onSelect }: HistoryListProps) {
+  return (
+    <section className="panel">
+      <h2>Session History</h2>
+      {sessions.length === 0 ? (
+        <p className="muted">No persisted sessions yet.</p>
+      ) : (
+        <ul className="plain-list">
+          {sessions.map((session) => (
+            <li key={session.id} className={selectedId === session.id ? "history-selected" : ""}>
+              <div className="history-row">
+                <div>
+                  <strong>{session.startedAt}</strong>
+                  <span className="muted"> — {session.duration}</span>
+                </div>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => onSelect(session.id)}
+                >
+                  View
+                </button>
+              </div>
+              <div className="muted">
+                {session.agentId} · {session.profileId}
+              </div>
+              <div className="muted">{session.projectPath}</div>
+              <div className="muted">
+                {session.eventCount} event{session.eventCount !== 1 ? "s" : ""},{" "}
+                {session.violationCount} violation{session.violationCount !== 1 ? "s" : ""}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+type HistoryDetailPanelProps = {
+  session: HistorySessionView;
+  onBack: () => void;
+};
+
+export function HistoryDetailPanel({ session, onBack }: HistoryDetailPanelProps) {
+  return (
+    <>
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Session Detail</h2>
+            <p className="muted">{session.id}</p>
+          </div>
+          <button className="secondary-button" type="button" onClick={onBack}>
+            Back to history
+          </button>
+        </div>
+        <p className="muted">Started: {session.startedAt}</p>
+        <p className="muted">Duration: {session.duration}</p>
+        <p className="muted">Agent: {session.agentId}</p>
+        <p className="muted">Profile: {session.profileId}</p>
+        <p className="muted">Project: {session.projectPath}</p>
+      </section>
+      <ViolationList violations={session.violations} />
+      <EventList events={session.events} />
+    </>
   );
 }
