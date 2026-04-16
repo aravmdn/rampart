@@ -121,18 +121,22 @@ Near-term emphasis is intentionally narrow:
 - Keep policy authoring above raw engine syntax
 - Avoid premature expansion into team admin or generic governance tooling
 
-Phase 1 reference-guided priorities are now complete:
+Phase 1 and early Phase 2 priorities are now complete:
 
 - Agent-specific launch adapters and startup diagnostics are implemented in rampartd.
 - Launcher flow and session console flow are separate product states in the desktop shell.
 - Capability limits are surfaced before session start, with launch blocked until preflight passes.
 - Terminal-first agent UX is preserved — Rampart controls enforcement and visibility without replacing the agent's native terminal.
+- Session records are self-contained: each history entry carries its capability snapshot, full audit event list, and all violations together.
+- Violation explanations are rule-linked and structured: policy reason, platform limitation, and remediation hint are separate fields.
+- A stable audit event taxonomy is in place across engines and agents: `SessionLifecycle`, `PolicyEnforcement`, and `SystemAlert` categories with domain-specific event kinds.
+- Session history has a dedicated view. Users can inspect any past session's full audit trail and violations without leaving the desktop app.
+- Profile presets are agent-aware. ClaudeCode, Codex, and Aider each have tailored standard and strict presets covering expected filesystem roots, network endpoints, and allowed child processes. The profile picker shows only presets relevant to the selected agent.
 
-Remaining near-term emphasis:
+Remaining Phase 2 emphasis:
 
-- Mature local session history into a first-class record of launch context, events, and violations.
-- Add rule-linked violation explanations with platform limitation notes.
-- Define a stable audit event taxonomy across engines and agents.
+- Profile editing UI so users can adjust rules without touching raw policy files.
+- Safe policy refinement flow that guides users from a violation to a considered rule change.
 
 ## Getting Started
 

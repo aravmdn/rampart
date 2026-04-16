@@ -68,15 +68,23 @@ Supporting architecture should therefore include:
 - The repo should not assume one engine is the permanent runtime
 - Public docs should surface limitations instead of implying unsupported protection
 
-## Phase 1 implementation status
+## Phase 1 and early Phase 2 implementation status
 
 The following Phase 1 priorities are complete:
 
 - Agent-specific launch adapters: `AgentAdapter` in rampartd owns command, default args, env, and terminal-first flag per agent tool. `LocalProcessRunner` uses adapters rather than bare command name lookup.
 - Launch preflight diagnostics: `run_preflight()` checks project directory, agent binary on PATH, capability gaps, and policy/capability compatibility before launch. Exposed via `preflight_check` Tauri command.
-- Launcher and session console split: the desktop shell has two distinct views. The launcher view handles pickers, preflight, capability warnings, and history. The session console view handles live status, audit stream, and violation explanations.
+- Launcher and session console split: the desktop shell has three distinct views — launcher, session console, and history. The launcher handles pickers, preflight, capability warnings, and recent history. The session console handles live status, audit stream, and violation explanations. The history view provides full per-session inspection.
 - Capability warnings before launch: flattened capability items are computed server-side and surfaced in the launcher. An explicit warning panel appears when unsupported capabilities are detected. Launch is disabled until preflight passes.
 - Terminal-first handoff: agents flagged as `terminal_first` show a handoff note in the launcher. Rampart controls enforcement and visibility; the agent keeps its native terminal interaction.
+
+The following early Phase 2 priorities are also complete:
+
+- Full session records: `SessionHistoryRecord` carries an optional capability snapshot captured at launch time. Each history entry is self-contained with launch context, events, and violations.
+- Violation explanations: `ViolationExplanation` in policy-core separates the policy reason, platform/engine limitation, and remediation hint into structured fields. `ViolationEvent` carries an optional explanation.
+- Stable audit taxonomy: `AuditEventCategory` (SessionLifecycle / PolicyEnforcement / SystemAlert) and domain-specific `AuditEventKind` variants (FilesystemAllowed, FilesystemBlocked, NetworkAllowed, NetworkBlocked, ProcessAllowed, ProcessBlocked) replace the generic pair for new events.
+- History detail view: the desktop shell has a dedicated history view. `HistoryList` shows session metadata; `HistoryDetailPanel` shows the full audit trail and violations for a selected session. The launcher's Recent History section links to it.
+- Agent-aware profile presets: `agent_profile_presets()` in policy-core returns tailored standard and strict presets for ClaudeCode, Codex, and Aider. `launch_context()` filters to show only the selected agent's presets. `preflight_check()` resolves profiles from the agent-specific list first.
 
 ## Research-informed lessons
 

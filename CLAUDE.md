@@ -76,17 +76,23 @@ specific to working with Claude Code in this repo.
 
 ## What is done (do not re-implement)
 
-Phase 1 Early priorities are complete. Do not rewrite or re-add:
+Phase 1 and early Phase 2 are complete. Do not rewrite or re-add:
 
 - `AgentAdapter` struct and per-agent adapter logic in rampartd
 - `run_preflight()` and `PreflightReport` in rampartd
 - `flatten_capabilities()` and `FlatCapabilityItem` in rampartd
 - `preflight_check` Tauri command
-- Launcher / session console split in `App.tsx`
+- Launcher / session console / history three-view split in `App.tsx`
 - Capability warning panel in the launcher view
 - Terminal-first handoff note in the launcher view
+- `SessionHistoryRecord` with capability snapshot in rampartd
+- `ViolationExplanation` and `PlatformLimitation` in policy-core
+- `AuditEventCategory` and domain-specific `AuditEventKind` variants
+- `HistoryList` and `HistoryDetailPanel` in shared-ui
+- History detail view in `App.tsx` with "View all history" navigation
+- `agent_profile_presets()` in policy-core (ClaudeCode, Codex, Aider presets)
+- Agent-filtered `launch_context()` and `profiles_for_agent()` in rampartd
 
-Current focus is Late Phase 1 / Early Phase 2:
-- Full session records (launch context + capability snapshot + events + violations together)
-- Rule-linked violation explanations with platform limitation notes
-- Stable audit event taxonomy across engines and agents
+Current focus is remaining Phase 2:
+- Profile editing UI so users can adjust rules in product language
+- Safe policy refinement flow from violation to considered rule change

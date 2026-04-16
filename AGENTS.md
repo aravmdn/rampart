@@ -72,10 +72,15 @@ Reference-informed next steps inside those phases:
   - capability warnings surface before launch; launch is disabled until preflight passes
   - launcher and session console are separate product states in the desktop shell
   - terminal-first agent UX is preserved via per-agent adapter flags
-- Late Phase 1 / Early Phase 2 (current focus):
-  - persist full session records, not only loose event lists
-  - add rule-linked violation explanations with platform-limit notes
-  - define a stable audit event taxonomy across engines and agents
+- Late Phase 1 / Early Phase 2 (complete):
+  - full session records implemented: each SessionHistoryRecord carries a capability snapshot, full event list, and all violations
+  - rule-linked violation explanations implemented: ViolationExplanation in policy-core separates policy reason, platform limitation, and remediation hint
+  - stable audit event taxonomy implemented: AuditEventCategory and domain-specific AuditEventKind variants across engines and agents
+  - session history detail view implemented: dedicated history view with HistoryList and HistoryDetailPanel in the desktop shell
+  - agent-aware profile presets implemented: agent_profile_presets() in policy-core; launch_context() filters by selected agent
+- Current focus (Phase 2 remaining):
+  - profile editing UI so users can adjust rules in product language
+  - safe policy refinement flow from violation to considered rule change
 - Later phases:
   - add headless launch paths and remote or bridge attachment only after the local loop is trustworthy
 
