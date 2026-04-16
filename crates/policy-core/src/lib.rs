@@ -782,6 +782,189 @@ pub fn validate_policy_against_capabilities(
     finish(errors)
 }
 
+/// Agent-specific profile presets. Returns 2 presets tailored to the given agent.
+/// Falls back to [`desktop_profile_presets`] for agents without specific presets.
+pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profile> {
+    let normalized_root = project_root.trim().trim_end_matches(['\\', '/']).to_string();
+    let user_profile = std::env::var("USERPROFILE").unwrap_or_else(|_| r"C:\Users\user".into());
+
+    match tool {
+        AgentTool::ClaudeCode => {
+            let claude_config = format!("{user_profile}\\.claude");
+            vec![
+                Profile {
+                    id: "claude-code.standard".into(),
+                    name: "Claude Code Standard".into(),
+                    description: Some(
+                        "Project read/write, Claude config readable, Anthropic API allowed.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), claude_config],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec!["api.anthropic.com".into()],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec![
+                                "git".into(),
+                                "node".into(),
+                                "npm".into(),
+                                "pnpm".into(),
+                            ],
+                            blocked_commands: vec!["powershell".into()],
+                        },
+                    },
+                },
+                Profile {
+                    id: "claude-code.strict".into(),
+                    name: "Claude Code Strict".into(),
+                    description: Some(
+                        "Project read/write only. Network denied. Child processes denied except git.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone()],
+                            writable_roots: vec![normalized_root],
+                            blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec!["git".into()],
+                            blocked_commands: vec!["powershell".into(), "cmd".into()],
+                        },
+                    },
+                },
+            ]
+        }
+        AgentTool::Codex => vec![
+            Profile {
+                id: "codex.standard".into(),
+                name: "Codex Standard".into(),
+                description: Some(
+                    "Project read/write, OpenAI API allowed. git, node, npm permitted.".into(),
+                ),
+                extends: None,
+                policy: Policy {
+                    filesystem: FilesystemPolicy {
+                        readable_roots: vec![normalized_root.clone()],
+                        writable_roots: vec![normalized_root.clone()],
+                        blocked_roots: vec![],
+                    },
+                    network: NetworkPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_hosts: vec!["api.openai.com".into()],
+                        blocked_hosts: vec![],
+                    },
+                    process: ProcessPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_commands: vec!["git".into(), "node".into(), "npm".into()],
+                        blocked_commands: vec!["powershell".into()],
+                    },
+                },
+            },
+            Profile {
+                id: "codex.strict".into(),
+                name: "Codex Strict".into(),
+                description: Some(
+                    "Project read/write only. Network denied. Only git permitted.".into(),
+                ),
+                extends: None,
+                policy: Policy {
+                    filesystem: FilesystemPolicy {
+                        readable_roots: vec![normalized_root.clone()],
+                        writable_roots: vec![normalized_root],
+                        blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                    },
+                    network: NetworkPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_hosts: vec![],
+                        blocked_hosts: vec![],
+                    },
+                    process: ProcessPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_commands: vec!["git".into()],
+                        blocked_commands: vec!["powershell".into(), "cmd".into()],
+                    },
+                },
+            },
+        ],
+        AgentTool::Aider => vec![
+            Profile {
+                id: "aider.standard".into(),
+                name: "Aider Standard".into(),
+                description: Some(
+                    "Project read/write, Anthropic and OpenAI APIs allowed. git and python permitted.".into(),
+                ),
+                extends: None,
+                policy: Policy {
+                    filesystem: FilesystemPolicy {
+                        readable_roots: vec![normalized_root.clone()],
+                        writable_roots: vec![normalized_root.clone()],
+                        blocked_roots: vec![],
+                    },
+                    network: NetworkPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_hosts: vec![
+                            "api.anthropic.com".into(),
+                            "api.openai.com".into(),
+                        ],
+                        blocked_hosts: vec![],
+                    },
+                    process: ProcessPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_commands: vec![
+                            "git".into(),
+                            "python".into(),
+                            "python3".into(),
+                            "pip".into(),
+                        ],
+                        blocked_commands: vec!["powershell".into()],
+                    },
+                },
+            },
+            Profile {
+                id: "aider.strict".into(),
+                name: "Aider Strict".into(),
+                description: Some(
+                    "Project read/write only. Network denied. Only git permitted.".into(),
+                ),
+                extends: None,
+                policy: Policy {
+                    filesystem: FilesystemPolicy {
+                        readable_roots: vec![normalized_root.clone()],
+                        writable_roots: vec![normalized_root],
+                        blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                    },
+                    network: NetworkPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_hosts: vec![],
+                        blocked_hosts: vec![],
+                    },
+                    process: ProcessPolicy {
+                        default_action: DefaultAction::Deny,
+                        allowed_commands: vec!["git".into()],
+                        blocked_commands: vec!["powershell".into(), "cmd".into()],
+                    },
+                },
+            },
+        ],
+        _ => desktop_profile_presets(project_root),
+    }
+}
+
 pub fn desktop_profile_presets(project_root: &str) -> Vec<Profile> {
     let normalized_root = project_root.trim().trim_end_matches(['\\', '/']).to_string();
     let apps_root = format!("{normalized_root}\\apps");
