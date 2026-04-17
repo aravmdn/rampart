@@ -49,7 +49,7 @@ The current intended desktop workflow is:
 1. Open Rampart.
 2. Choose a local project or repository.
 3. Choose an installed agent, such as Claude Code, Codex, Aider, Goose, or OpenCode.
-4. Accept or adjust a suggested policy profile.
+4. Accept the suggested profile or open the profile editor to adjust paths, hosts, and commands.
 5. Launch the agent session through Rampart.
 6. Watch live session state, blocked actions, and explanations.
 7. Stop the session and review local history if needed.
@@ -132,11 +132,10 @@ Phase 1 and early Phase 2 priorities are now complete:
 - A stable audit event taxonomy is in place across engines and agents: `SessionLifecycle`, `PolicyEnforcement`, and `SystemAlert` categories with domain-specific event kinds.
 - Session history has a dedicated view. Users can inspect any past session's full audit trail and violations without leaving the desktop app.
 - Profile presets are agent-aware. ClaudeCode, Codex, and Aider each have tailored standard and strict presets covering expected filesystem roots, network endpoints, and allowed child processes. The profile picker shows only presets relevant to the selected agent.
+- Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
+- Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Remaining Phase 2 emphasis:
-
-- Profile editing UI so users can adjust rules without touching raw policy files.
-- Safe policy refinement flow that guides users from a violation to a considered rule change.
+Phase 2 is complete. Remaining emphasis moves to Phase 3 foundations:
 
 ## Getting Started
 

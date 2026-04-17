@@ -76,13 +76,13 @@ specific to working with Claude Code in this repo.
 
 ## What is done (do not re-implement)
 
-Phase 1 and early Phase 2 are complete. Do not rewrite or re-add:
+Phases 1 and 2 are complete. Do not rewrite or re-add:
 
 - `AgentAdapter` struct and per-agent adapter logic in rampartd
 - `run_preflight()` and `PreflightReport` in rampartd
 - `flatten_capabilities()` and `FlatCapabilityItem` in rampartd
 - `preflight_check` Tauri command
-- Launcher / session console / history three-view split in `App.tsx`
+- Launcher / session console / history / profile-editor four-view split in `App.tsx`
 - Capability warning panel in the launcher view
 - Terminal-first handoff note in the launcher view
 - `SessionHistoryRecord` with capability snapshot in rampartd
@@ -92,7 +92,19 @@ Phase 1 and early Phase 2 are complete. Do not rewrite or re-add:
 - History detail view in `App.tsx` with "View all history" navigation
 - `agent_profile_presets()` in policy-core (ClaudeCode, Codex, Aider presets)
 - Agent-filtered `launch_context()` and `profiles_for_agent()` in rampartd
+- `ProfileDetail`, `loadProfile`, `saveProfile` in contracts and both daemon clients
+- `ProfileEditorPanel` in shared-ui (product-language policy editing with textarea lists and default-action toggles)
+- `PolicyEditorView`, `PolicySuggestion` types in shared-ui
+- Profile editor view in `App.tsx` with "Edit selected profile" entry from launcher
+- Policy refinement flow: "Adjust policy" on violations → editor pre-populated with targeted suggestion
 
-Current focus is remaining Phase 2:
-- Profile editing UI so users can adjust rules in product language
-- Safe policy refinement flow from violation to considered rule change
+Current focus is Phase 3 foundations:
+- Shared policies, signed profile distribution, centralized audit sync, org settings
+
+## End-of-session checklist
+
+At the end of each work session, check whether any of the following need updates based on what changed:
+- `README.md` — current status, completed items, workflow description
+- `AGENTS.md` — phase completion markers, current focus, what-is-done list
+- `CLAUDE.md` — what-is-done list, current focus
+- `docs/architecture.md`, `docs/roadmap.md` — if architecture or roadmap shifted

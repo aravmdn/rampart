@@ -78,9 +78,11 @@ Reference-informed next steps inside those phases:
   - stable audit event taxonomy implemented: AuditEventCategory and domain-specific AuditEventKind variants across engines and agents
   - session history detail view implemented: dedicated history view with HistoryList and HistoryDetailPanel in the desktop shell
   - agent-aware profile presets implemented: agent_profile_presets() in policy-core; launch_context() filters by selected agent
-- Current focus (Phase 2 remaining):
-  - profile editing UI so users can adjust rules in product language
-  - safe policy refinement flow from violation to considered rule change
+- Phase 2 (complete):
+  - profile editing UI implemented: ProfileEditorPanel renders policy in product language; accessible from the launcher via "Edit selected profile"
+  - safe policy refinement flow implemented: each violation in the session console carries an "Adjust policy" button that derives a rule suggestion and opens the profile editor pre-populated with it
+- Current focus (Phase 3 foundations):
+  - shared policies, signed profile distribution, centralized audit sync, org settings
 - Later phases:
   - add headless launch paths and remote or bridge attachment only after the local loop is trustworthy
 
