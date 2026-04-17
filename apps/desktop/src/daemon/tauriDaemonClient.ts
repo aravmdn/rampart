@@ -5,6 +5,7 @@ import type {
   LaunchContext,
   LaunchSessionRequest,
   PreflightReport,
+  ProfileDetail,
   SelectedLaunchConfig,
   SessionHistoryEntry,
   SessionState,
@@ -198,6 +199,12 @@ export const tauriDaemonClient: DaemonApi = {
   },
   async streamSessionEvents(sessionId: string) {
     return invoke<{ audit: any[]; violations: any[] }>("stream_session_events", { sessionId });
+  },
+  async loadProfile(profileId: string): Promise<ProfileDetail> {
+    return invoke<ProfileDetail>("load_profile", { profileId });
+  },
+  async saveProfile(profile: ProfileDetail): Promise<void> {
+    await invoke("save_profile", { profile });
   },
   async listSessionHistory() {
     const response = await invoke<RawHistoryEntry[]>("list_session_history");

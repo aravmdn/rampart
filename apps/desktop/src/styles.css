@@ -146,6 +146,71 @@ body {
   opacity: 0.5;
 }
 
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.history-selected {
+  font-weight: 600;
+}
+
+.editor-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.editor-textarea {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.85rem;
+  padding: 8px;
+  border: 1px solid #bfccd9;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: #0f1724;
+  resize: vertical;
+}
+
+.toggle-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.toggle-button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #8b9bb1;
+  background: transparent;
+  color: #274261;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle-active {
+  background: #114b7d;
+  border-color: #114b7d;
+  color: #fff;
+}
+
+.action-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.panel h3 {
+  margin: 16px 0 8px;
+  font-size: 1rem;
+  color: #1a3558;
+}
+
 @media (max-width: 960px) {
   .shell {
     padding: 16px;

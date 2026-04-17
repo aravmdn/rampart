@@ -1,3 +1,26 @@
+export type DefaultAction = "allow" | "deny";
+
+export type ProfileDetail = {
+  id: string;
+  displayName: string;
+  detail: string;
+  filesystem: {
+    readableRoots: string[];
+    writableRoots: string[];
+    blockedRoots: string[];
+  };
+  network: {
+    defaultAction: DefaultAction;
+    allowedHosts: string[];
+    blockedHosts: string[];
+  };
+  process: {
+    defaultAction: DefaultAction;
+    allowedCommands: string[];
+    blockedCommands: string[];
+  };
+};
+
 export const TASK3_API_NAMES = {
   loadLaunchContext: "load_launch_context",
   saveSelectedLaunchConfig: "save_selected_launch_config",
@@ -153,4 +176,6 @@ export type DaemonApi = {
     sessionId: string,
   ) => Promise<{ audit: AuditEvent[]; violations: ViolationEvent[] }>;
   listSessionHistory: () => Promise<SessionHistoryEntry[]>;
+  loadProfile: (profileId: string) => Promise<ProfileDetail>;
+  saveProfile: (profile: ProfileDetail) => Promise<void>;
 };

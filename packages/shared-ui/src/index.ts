@@ -1,9 +1,12 @@
 export { StatusBadge, type StatusBadgeTone } from "./components/StatusBadge";
 export type {
   CapabilityView,
+  DefaultAction,
   EventView,
   HistorySessionView,
   OptionItem,
+  PolicyEditorView,
+  PolicySuggestion,
   SessionStatus,
   SessionStatusView,
   ViolationView,
@@ -14,6 +17,7 @@ export {
   HistoryDetailPanel,
   HistoryList,
   PickerSection,
+  ProfileEditorPanel,
   SessionStatusPanel,
   ViolationList,
 } from "./lib/ui";

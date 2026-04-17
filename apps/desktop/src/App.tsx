@@ -5,6 +5,7 @@ import {
   HistoryDetailPanel,
   HistoryList,
   PickerSection,
+  ProfileEditorPanel,
   SessionStatusPanel,
   ViolationList,
   explainViolation,
@@ -12,6 +13,8 @@ import {
   type EventView,
   type HistorySessionView,
   type OptionItem,
+  type PolicyEditorView,
+  type PolicySuggestion,
   type SessionStatusView,
   type ViolationView,
 } from "@rampart/shared-ui";
@@ -24,12 +27,13 @@ import {
   type DaemonApi,
   type EngineCapabilitySnapshot,
   type PreflightReport,
+  type ProfileDetail,
   type ProfileSummary,
   type ProjectSummary,
   type SessionHistoryEntry,
 } from "./daemon/contracts";
 
-type AppView = "launcher" | "session" | "history";
+type AppView = "launcher" | "session" | "history" | "profile-editor";
 
 function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] {
   const labels: Record<string, string> = {
@@ -85,6 +89,8 @@ function toHistorySessionView(
       policyRuleId: v.ruleId,
       policyRuleLabel: v.ruleLabel ?? "Project scope guard",
       platformNote: v.platformNote ?? undefined,
+      operation: v.operation,
+      target: v.target,
     })),
   };
 }
@@ -114,6 +120,9 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [violations, setViolations] = useState<ViolationView[]>([]);
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [editorProfile, setEditorProfile] = useState<PolicyEditorView | null>(null);
+  const [editorSuggestion, setEditorSuggestion] = useState<PolicySuggestion | undefined>(undefined);
+  const [editorReturnView, setEditorReturnView] = useState<"launcher" | "session">("launcher");
 
   useEffect(() => {
     void (async () => {
@@ -183,6 +192,92 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     toHistorySessionView(entry, explainViolation),
   );
 
+  function profileDetailToEditorView(p: ProfileDetail): PolicyEditorView {
+    return {
+      id: p.id,
+      displayName: p.displayName,
+      detail: p.detail,
+      filesystem: p.filesystem,
+      network: p.network,
+      process: p.process,
+    };
+  }
+
+  async function openProfileEditor(returnView: "launcher" | "session", suggestion?: PolicySuggestion) {
+    if (!profileId) return;
+    const detail = await daemonClient.loadProfile(profileId);
+    let editor = profileDetailToEditorView(detail);
+    if (suggestion) {
+      const section = suggestion.section as keyof PolicyEditorView;
+      if (section === "filesystem" || section === "network" || section === "process") {
+        const field = suggestion.field as keyof typeof editor[typeof section];
+        const list = editor[section][field] as string[];
+        if (!list.includes(suggestion.value)) {
+          (editor[section] as Record<string, unknown>)[field] = [...list, suggestion.value];
+        }
+      }
+    }
+    setEditorProfile(editor);
+    setEditorSuggestion(suggestion);
+    setEditorReturnView(returnView);
+    setView("profile-editor");
+  }
+
+  async function handleSaveProfile(updated: PolicyEditorView) {
+    await daemonClient.saveProfile(updated);
+    setProfiles((prev) =>
+      prev.map((p) =>
+        p.id === updated.id ? { id: updated.id, displayName: updated.displayName, detail: updated.detail } : p,
+      ),
+    );
+    setEditorProfile(null);
+    setEditorSuggestion(undefined);
+    setView(editorReturnView);
+  }
+
+  function handleCancelEditor() {
+    setEditorProfile(null);
+    setEditorSuggestion(undefined);
+    setView(editorReturnView);
+  }
+
+  function violationSuggestion(v: ViolationView): PolicySuggestion | undefined {
+    if (!v.operation || !v.target) return undefined;
+    if (v.operation === "read") {
+      return {
+        section: "filesystem",
+        field: "readableRoots",
+        value: v.target,
+        reason: `The agent tried to read "${v.target}" but it was outside the allowed readable paths. Add it to allow access.`,
+      };
+    }
+    if (v.operation === "write") {
+      return {
+        section: "filesystem",
+        field: "writableRoots",
+        value: v.target,
+        reason: `The agent tried to write to "${v.target}" but it was outside the allowed writable paths. Add it to allow writes.`,
+      };
+    }
+    if (v.operation === "network") {
+      return {
+        section: "network",
+        field: "allowedHosts",
+        value: v.target,
+        reason: `The agent tried to reach "${v.target}" but network access was blocked. Add it to allow this host.`,
+      };
+    }
+    if (v.operation === "execute") {
+      return {
+        section: "process",
+        field: "allowedCommands",
+        value: v.target,
+        reason: `The agent tried to run "${v.target}" but the command was blocked. Add it to allow execution.`,
+      };
+    }
+    return undefined;
+  }
+
   async function handleLaunch() {
     const selectedProject = projects.find((project) => project.id === projectId);
     const selectedProfile = profiles.find((profile) => profile.id === profileId);
@@ -228,7 +323,10 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
         title: `${violation.operation} blocked`,
         detail: explainViolation(violation),
         policyRuleId: violation.ruleId,
-        policyRuleLabel: "Project scope guard",
+        policyRuleLabel: violation.ruleLabel ?? "Project scope guard",
+        platformNote: violation.platformNote ?? undefined,
+        operation: violation.operation,
+        target: violation.target,
       })),
     );
     setHistory(recentHistory);
@@ -252,6 +350,31 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setSession({ id: null, status: "idle", projectPath: null, profileName: null, agentName: null });
     setEvents([]);
     setViolations([]);
+  }
+
+  // ── Profile editor view ────────────────────────────────────────────
+  if (view === "profile-editor" && editorProfile) {
+    return (
+      <main className="shell">
+        <section className="panel hero">
+          <p className="eyebrow">Rampart profile editor</p>
+          <h1>Edit profile</h1>
+          <p className="muted">
+            Adjust policy rules in product language. Changes apply to future sessions using this profile.
+          </p>
+        </section>
+        <div className="columns">
+          <div className="column">
+            <ProfileEditorPanel
+              profile={editorProfile}
+              suggestion={editorSuggestion}
+              onSave={(updated) => { void handleSaveProfile(updated); }}
+              onCancel={handleCancelEditor}
+            />
+          </div>
+        </div>
+      </main>
+    );
   }
 
   // ── History view ───────────────────────────────────────────────────
@@ -335,6 +458,17 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
               selectedId={profileId}
               onSelect={setProfileId}
             />
+            {profileId ? (
+              <section className="panel">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => { void openProfileEditor("launcher"); }}
+                >
+                  Edit selected profile
+                </button>
+              </section>
+            ) : null}
 
             {selectedAgent?.terminalFirst ? (
               <section className="panel">
@@ -464,7 +598,39 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
         </div>
 
         <div className="column">
-          <ViolationList violations={violations} />
+          <section className="panel">
+            <h2>Violation View</h2>
+            {violations.length === 0 ? (
+              <p className="muted">No blocked actions yet.</p>
+            ) : (
+              <ul className="plain-list">
+                {violations.map((violation) => {
+                  const suggestion = violationSuggestion(violation);
+                  return (
+                    <li key={violation.id}>
+                      <strong>{violation.title}</strong>
+                      <div>{violation.detail}</div>
+                      <div className="muted">
+                        Rule: {violation.policyRuleLabel} ({violation.policyRuleId})
+                      </div>
+                      {violation.platformNote ? (
+                        <div className="muted">Platform note: {violation.platformNote}</div>
+                      ) : null}
+                      {suggestion ? (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => { void openProfileEditor("session", suggestion); }}
+                        >
+                          Adjust policy
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
           <EventList events={events} />
         </div>
       </div>

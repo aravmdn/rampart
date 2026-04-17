@@ -2,10 +2,12 @@ import type {
   AgentTool,
   AuditEvent,
   DaemonApi,
+  DefaultAction,
   LaunchContext,
   EngineCapabilitySnapshot,
   LaunchSessionRequest,
   PreflightReport,
+  ProfileDetail,
   ProfileSummary,
   SelectedLaunchConfig,
   SessionHistoryEntry,
@@ -73,6 +75,131 @@ const genericProfiles: ProfileSummary[] = [
     detail: "Project read only outside src. Child process creation denied.",
   },
 ];
+
+const mockProfileDetails: Record<string, ProfileDetail> = {
+  "claude-code.standard": {
+    id: "claude-code.standard",
+    displayName: "Claude Code Standard",
+    detail: "Project read/write, Claude config readable, Anthropic API allowed.",
+    filesystem: {
+      readableRoots: ["C:\\projects\\rampart", "C:\\Users\\user\\.claude"],
+      writableRoots: ["C:\\projects\\rampart"],
+      blockedRoots: [],
+    },
+    network: {
+      defaultAction: "deny" as DefaultAction,
+      allowedHosts: ["api.anthropic.com"],
+      blockedHosts: [],
+    },
+    process: {
+      defaultAction: "deny" as DefaultAction,
+      allowedCommands: ["git", "node", "npm", "pnpm"],
+      blockedCommands: ["powershell"],
+    },
+  },
+  "claude-code.strict": {
+    id: "claude-code.strict",
+    displayName: "Claude Code Strict",
+    detail: "Project read/write only. Network denied. Child processes denied except git.",
+    filesystem: {
+      readableRoots: ["C:\\projects\\rampart"],
+      writableRoots: ["C:\\projects\\rampart"],
+      blockedRoots: ["C:\\Users", "C:\\Windows"],
+    },
+    network: {
+      defaultAction: "deny" as DefaultAction,
+      allowedHosts: [],
+      blockedHosts: [],
+    },
+    process: {
+      defaultAction: "deny" as DefaultAction,
+      allowedCommands: ["git"],
+      blockedCommands: ["powershell", "cmd"],
+    },
+  },
+  "codex.standard": {
+    id: "codex.standard",
+    displayName: "Codex Standard",
+    detail: "Project read/write, OpenAI API allowed. git, node, npm permitted.",
+    filesystem: {
+      readableRoots: ["C:\\projects\\rampart"],
+      writableRoots: ["C:\\projects\\rampart"],
+      blockedRoots: [],
+    },
+    network: {
+      defaultAction: "deny" as DefaultAction,
+      allowedHosts: ["api.openai.com"],
+      blockedHosts: [],
+    },
+    process: {
+      defaultAction: "deny" as DefaultAction,
+      allowedCommands: ["git", "node", "npm"],
+      blockedCommands: ["powershell"],
+    },
+  },
+  "codex.strict": {
+    id: "codex.strict",
+    displayName: "Codex Strict",
+    detail: "Project read/write only. Network denied. Only git permitted.",
+    filesystem: {
+      readableRoots: ["C:\\projects\\rampart"],
+      writableRoots: ["C:\\projects\\rampart"],
+      blockedRoots: ["C:\\Users", "C:\\Windows"],
+    },
+    network: {
+      defaultAction: "deny" as DefaultAction,
+      allowedHosts: [],
+      blockedHosts: [],
+    },
+    process: {
+      defaultAction: "deny" as DefaultAction,
+      allowedCommands: ["git"],
+      blockedCommands: ["powershell", "cmd"],
+    },
+  },
+  "windows-safe": {
+    id: "windows-safe",
+    displayName: "Windows Safe",
+    detail: "Project scoped read/write. Network denied by default.",
+    filesystem: {
+      readableRoots: ["C:\\projects\\rampart"],
+      writableRoots: ["C:\\projects\\rampart\\apps"],
+      blockedRoots: ["C:\\Users"],
+    },
+    network: {
+      defaultAction: "deny" as DefaultAction,
+      allowedHosts: [],
+      blockedHosts: [],
+    },
+    process: {
+      defaultAction: "deny" as DefaultAction,
+      allowedCommands: ["git"],
+      blockedCommands: ["powershell"],
+    },
+  },
+  "windows-strict": {
+    id: "windows-strict",
+    displayName: "Windows Strict",
+    detail: "Project read only outside src. Child process creation denied.",
+    filesystem: {
+      readableRoots: ["C:\\projects\\rampart"],
+      writableRoots: ["C:\\projects\\rampart\\crates"],
+      blockedRoots: ["C:\\Users", "C:\\Windows"],
+    },
+    network: {
+      defaultAction: "deny" as DefaultAction,
+      allowedHosts: [],
+      blockedHosts: [],
+    },
+    process: {
+      defaultAction: "deny" as DefaultAction,
+      allowedCommands: ["git"],
+      blockedCommands: ["powershell", "cmd"],
+    },
+  },
+};
+
+const profileStore = new Map<string, ProfileDetail>(Object.entries(mockProfileDetails));
 
 function profilesForAgent(agentId: string | null): ProfileSummary[] {
   if (agentId && allProfilePresets[agentId]) {
@@ -236,6 +363,18 @@ export const mockDaemonClient: DaemonApi = {
       audit: buildAudit(sessionId),
       violations: buildViolations(sessionId),
     };
+  },
+  async loadProfile(profileId: string): Promise<ProfileDetail> {
+    await pause(40);
+    const profile = profileStore.get(profileId);
+    if (!profile) {
+      throw new Error(`Profile not found: ${profileId}`);
+    }
+    return { ...profile };
+  },
+  async saveProfile(profile: ProfileDetail): Promise<void> {
+    await pause(60);
+    profileStore.set(profile.id, { ...profile });
   },
   async listSessionHistory(): Promise<SessionHistoryEntry[]> {
     await pause(40);

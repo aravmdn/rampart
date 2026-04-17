@@ -1,8 +1,11 @@
+import { useState } from "react";
 import type {
   CapabilityView,
   EventView,
   HistorySessionView,
   OptionItem,
+  PolicyEditorView,
+  PolicySuggestion,
   SessionStatusView,
   ViolationView,
 } from "./types";
@@ -199,6 +202,203 @@ export function HistoryList({ sessions, selectedId, onSelect }: HistoryListProps
         </ul>
       )}
     </section>
+  );
+}
+
+type ProfileEditorPanelProps = {
+  profile: PolicyEditorView;
+  suggestion?: PolicySuggestion;
+  onSave: (updated: PolicyEditorView) => void;
+  onCancel: () => void;
+};
+
+function listToText(items: string[]): string {
+  return items.join("\n");
+}
+
+function textToList(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+export function ProfileEditorPanel({
+  profile,
+  suggestion,
+  onSave,
+  onCancel,
+}: ProfileEditorPanelProps) {
+  const [readableRoots, setReadableRoots] = useState(listToText(profile.filesystem.readableRoots));
+  const [writableRoots, setWritableRoots] = useState(listToText(profile.filesystem.writableRoots));
+  const [blockedRoots, setBlockedRoots] = useState(listToText(profile.filesystem.blockedRoots));
+  const [networkDefault, setNetworkDefault] = useState(profile.network.defaultAction);
+  const [allowedHosts, setAllowedHosts] = useState(listToText(profile.network.allowedHosts));
+  const [blockedHosts, setBlockedHosts] = useState(listToText(profile.network.blockedHosts));
+  const [processDefault, setProcessDefault] = useState(profile.process.defaultAction);
+  const [allowedCommands, setAllowedCommands] = useState(listToText(profile.process.allowedCommands));
+  const [blockedCommands, setBlockedCommands] = useState(listToText(profile.process.blockedCommands));
+
+  function handleSave() {
+    onSave({
+      ...profile,
+      filesystem: {
+        readableRoots: textToList(readableRoots),
+        writableRoots: textToList(writableRoots),
+        blockedRoots: textToList(blockedRoots),
+      },
+      network: {
+        defaultAction: networkDefault,
+        allowedHosts: textToList(allowedHosts),
+        blockedHosts: textToList(blockedHosts),
+      },
+      process: {
+        defaultAction: processDefault,
+        allowedCommands: textToList(allowedCommands),
+        blockedCommands: textToList(blockedCommands),
+      },
+    });
+  }
+
+  return (
+    <>
+      {suggestion ? (
+        <section className="panel">
+          <h2>Suggested rule change</h2>
+          <p className="muted">{suggestion.reason}</p>
+          <p>
+            <strong>Add to {suggestion.field}:</strong>{" "}
+            <code>{suggestion.value}</code>
+          </p>
+          <p className="muted">Review and adjust the policy below, then save.</p>
+        </section>
+      ) : null}
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>{profile.displayName}</h2>
+            <p className="muted">{profile.detail}</p>
+          </div>
+        </div>
+
+        <h3>Filesystem</h3>
+        <label className="editor-label">
+          Paths the agent can read (one per line)
+          <textarea
+            className="editor-textarea"
+            value={readableRoots}
+            onChange={(e) => setReadableRoots(e.target.value)}
+            rows={3}
+          />
+        </label>
+        <label className="editor-label">
+          Paths the agent can write (one per line)
+          <textarea
+            className="editor-textarea"
+            value={writableRoots}
+            onChange={(e) => setWritableRoots(e.target.value)}
+            rows={3}
+          />
+        </label>
+        <label className="editor-label">
+          Always blocked paths (one per line)
+          <textarea
+            className="editor-textarea"
+            value={blockedRoots}
+            onChange={(e) => setBlockedRoots(e.target.value)}
+            rows={2}
+          />
+        </label>
+
+        <h3>Network</h3>
+        <label className="editor-label">
+          Default network action
+          <div className="toggle-row">
+            <button
+              className={`toggle-button ${networkDefault === "deny" ? "toggle-active" : ""}`}
+              type="button"
+              onClick={() => setNetworkDefault("deny")}
+            >
+              Block all by default
+            </button>
+            <button
+              className={`toggle-button ${networkDefault === "allow" ? "toggle-active" : ""}`}
+              type="button"
+              onClick={() => setNetworkDefault("allow")}
+            >
+              Allow all by default
+            </button>
+          </div>
+        </label>
+        <label className="editor-label">
+          Allowed hosts (one per line)
+          <textarea
+            className="editor-textarea"
+            value={allowedHosts}
+            onChange={(e) => setAllowedHosts(e.target.value)}
+            rows={3}
+          />
+        </label>
+        <label className="editor-label">
+          Always blocked hosts (one per line)
+          <textarea
+            className="editor-textarea"
+            value={blockedHosts}
+            onChange={(e) => setBlockedHosts(e.target.value)}
+            rows={2}
+          />
+        </label>
+
+        <h3>Process execution</h3>
+        <label className="editor-label">
+          Default for running commands
+          <div className="toggle-row">
+            <button
+              className={`toggle-button ${processDefault === "deny" ? "toggle-active" : ""}`}
+              type="button"
+              onClick={() => setProcessDefault("deny")}
+            >
+              Block all by default
+            </button>
+            <button
+              className={`toggle-button ${processDefault === "allow" ? "toggle-active" : ""}`}
+              type="button"
+              onClick={() => setProcessDefault("allow")}
+            >
+              Allow all by default
+            </button>
+          </div>
+        </label>
+        <label className="editor-label">
+          Allowed commands (one per line)
+          <textarea
+            className="editor-textarea"
+            value={allowedCommands}
+            onChange={(e) => setAllowedCommands(e.target.value)}
+            rows={3}
+          />
+        </label>
+        <label className="editor-label">
+          Always blocked commands (one per line)
+          <textarea
+            className="editor-textarea"
+            value={blockedCommands}
+            onChange={(e) => setBlockedCommands(e.target.value)}
+            rows={2}
+          />
+        </label>
+
+        <div className="action-row">
+          <button className="launch-button" type="button" onClick={handleSave}>
+            Save profile
+          </button>
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </section>
+    </>
   );
 }
 
