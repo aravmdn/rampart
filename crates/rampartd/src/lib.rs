@@ -1,6 +1,6 @@
 use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
 #[cfg(target_os = "windows")]
-use engine_windows::WindowsJob;
+use engine_windows::{set_process_low_integrity, WindowsJob, WfpError, WfpNetworkGuard};
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
     AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
@@ -680,6 +680,8 @@ pub struct LocalProcessRunner {
     children: HashMap<String, Child>,
     #[cfg(target_os = "windows")]
     jobs: HashMap<String, WindowsJob>,
+    #[cfg(target_os = "windows")]
+    wfp_guards: HashMap<String, WfpNetworkGuard>,
 }
 
 impl Default for LocalProcessRunner {
@@ -688,6 +690,8 @@ impl Default for LocalProcessRunner {
             children: HashMap::new(),
             #[cfg(target_os = "windows")]
             jobs: HashMap::new(),
+            #[cfg(target_os = "windows")]
+            wfp_guards: HashMap::new(),
         }
     }
 }
@@ -718,9 +722,37 @@ impl LocalProcessRunner {
                 self.jobs.insert(session.id.clone(), job);
             }
             Err(error) => {
-                // Non-fatal: session still runs, just without job containment.
                 eprintln!(
                     "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
+                    session.id
+                );
+            }
+        }
+
+        // Reduce the agent process to Low Integrity so the OS denies writes to
+        // Medium-or-higher integrity paths (user profile, system dirs, etc.).
+        // Best-effort: session continues if this fails (e.g. restricted account).
+        #[cfg(target_os = "windows")]
+        if let Err(error) = set_process_low_integrity(pid) {
+            eprintln!(
+                "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
+                session.id
+            );
+        }
+
+        // Open a WFP engine session for per-process network filtering.
+        // Filter add is not yet implemented; the guard is stored for future use.
+        #[cfg(target_os = "windows")]
+        match WfpNetworkGuard::open(pid, &adapter.command) {
+            Ok(guard) => {
+                self.wfp_guards.insert(session.id.clone(), guard);
+            }
+            Err(WfpError::FilterNotImplemented) => {
+                // Expected until per-app filter is wired; not logged as an error.
+            }
+            Err(error) => {
+                eprintln!(
+                    "rampartd: WFP session failed for session '{}' (pid {pid}): {error}",
                     session.id
                 );
             }
@@ -735,9 +767,11 @@ impl LocalProcessRunner {
 
     fn stop_session(&mut self, session_id: &str) -> Result<(), ProcessRunnerError> {
         // Drop the job handle first so KILL_ON_JOB_CLOSE fires before we call
-        // child.kill(). On non-Windows the map removal is a no-op compile-out.
+        // child.kill(). On non-Windows the map removals are no-op compile-outs.
         #[cfg(target_os = "windows")]
         drop(self.jobs.remove(session_id));
+        #[cfg(target_os = "windows")]
+        drop(self.wfp_guards.remove(session_id));
 
         let mut child = self
             .children
