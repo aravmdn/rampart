@@ -1,6 +1,9 @@
 use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
 #[cfg(target_os = "windows")]
-use engine_windows::{set_process_low_integrity, WindowsJob, WfpError, WfpNetworkGuard};
+use engine_windows::{
+    patch_project_low_integrity_label, set_process_low_integrity, EtwAuditProvider, WindowsJob,
+    WfpNetworkGuard,
+};
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
     AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
@@ -438,6 +441,8 @@ pub struct RampartDaemon<E = GreywallAdapter> {
     capability_snapshots: HashMap<String, EngineCapabilitySnapshot>,
     active_processes: HashMap<String, ManagedProcess>,
     next_session_id: u64,
+    #[cfg(target_os = "windows")]
+    etw: Option<EtwAuditProvider>,
 }
 
 impl<E> RampartDaemon<E>
@@ -458,6 +463,23 @@ where
             capability_snapshots: HashMap::new(),
             active_processes: HashMap::new(),
             next_session_id: 1,
+            #[cfg(target_os = "windows")]
+            etw: EtwAuditProvider::register()
+                .map_err(|e| eprintln!("rampartd: ETW registration failed: {e}"))
+                .ok(),
+        }
+    }
+
+    #[allow(unused_variables)]
+    fn emit_audit_etw(&self, event: &policy_core::AuditEvent) {
+        #[cfg(target_os = "windows")]
+        if let Some(etw) = &self.etw {
+            etw.write_audit_event(
+                &event.session_id,
+                &format!("{:?}", event.kind),
+                &format!("{:?}", event.outcome),
+                &event.message,
+            );
         }
     }
 
@@ -484,6 +506,7 @@ where
             target: target.into(),
         });
 
+        self.emit_audit_etw(&normalized.audit);
         let queue = self.events.entry(session_id.into()).or_default();
         queue.push_back(SessionEventRecord::Audit(normalized.audit));
         if let Some(violation) = normalized.violation {
@@ -604,6 +627,7 @@ where
         };
         self.sessions
             .insert(session_id.clone(), persisted_session.clone());
+        self.emit_audit_etw(&launch_audit);
         self.events.insert(
             session_id.clone(),
             VecDeque::from([SessionEventRecord::Audit(launch_audit)]),
@@ -630,19 +654,21 @@ where
             .map(|queue| queue.len() as u64 + 1)
             .unwrap_or(2);
 
+        let end_event = AuditEvent {
+            session_id: session_id.into(),
+            sequence: next_sequence,
+            occurred_at_ms: ended_at_ms,
+            kind: AuditEventKind::SessionEnded,
+            category: AuditEventCategory::SessionLifecycle,
+            outcome: AuditOutcome::Info,
+            message: "Session stopped by daemon.".into(),
+            violation: None,
+        };
+        self.emit_audit_etw(&end_event);
         self.events
             .entry(session_id.into())
             .or_default()
-            .push_back(SessionEventRecord::Audit(AuditEvent {
-                session_id: session_id.into(),
-                sequence: next_sequence,
-                occurred_at_ms: ended_at_ms,
-                kind: AuditEventKind::SessionEnded,
-                category: AuditEventCategory::SessionLifecycle,
-                outcome: AuditOutcome::Info,
-                message: "Session stopped by daemon.".into(),
-                violation: None,
-            }));
+            .push_back(SessionEventRecord::Audit(end_event));
 
         Ok(session.clone())
     }
@@ -710,6 +736,17 @@ impl LocalProcessRunner {
         for (key, value) in &adapter.env {
             cmd.env(key, value);
         }
+
+        // Patch the project root to Low mandatory label so the Low-integrity
+        // agent process can write to its working directory.
+        #[cfg(target_os = "windows")]
+        if let Err(error) = patch_project_low_integrity_label(Path::new(&session.project_path)) {
+            eprintln!(
+                "rampartd: SACL patch failed for '{}': {error}",
+                session.project_path
+            );
+        }
+
         let child = cmd.spawn().map_err(|source| ProcessRunnerError::Spawn {
             command: adapter.command.clone(),
             source,
@@ -740,19 +777,16 @@ impl LocalProcessRunner {
             );
         }
 
-        // Open a WFP engine session for per-process network filtering.
-        // Filter add is not yet implemented; the guard is stored for future use.
+        // Open a WFP dynamic session and install per-app-ID outbound BLOCK filters.
+        // Best-effort: session continues without network enforcement on failure.
         #[cfg(target_os = "windows")]
         match WfpNetworkGuard::open(pid, &adapter.command) {
             Ok(guard) => {
                 self.wfp_guards.insert(session.id.clone(), guard);
             }
-            Err(WfpError::FilterNotImplemented) => {
-                // Expected until per-app filter is wired; not logged as an error.
-            }
             Err(error) => {
                 eprintln!(
-                    "rampartd: WFP session failed for session '{}' (pid {pid}): {error}",
+                    "rampartd: WFP filter failed for session '{}' (pid {pid}): {error}",
                     session.id
                 );
             }

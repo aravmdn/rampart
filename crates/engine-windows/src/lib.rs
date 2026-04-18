@@ -10,11 +10,9 @@ pub const ENGINE_ID: &str = "windows-native";
 /// Windows-native enforcement engine.
 ///
 /// Process containment is backed by Windows Job Objects (KILL_ON_JOB_CLOSE).
-/// Filesystem and network enforcement are not yet applied; those capabilities
-/// are reported as Unsupported until ACLs and WFP are wired in Phase 3.
+/// Filesystem write restriction uses Low Integrity tokens + project-root SACL.
+/// Network enforcement uses WFP per-app-ID outbound filters.
 pub struct WindowsEnforcer {
-    // Greywall adapter used solely for event normalization so that the audit
-    // taxonomy remains consistent across engines.
     greywall: GreywallAdapter,
 }
 
@@ -46,18 +44,17 @@ impl EnforcementEngine for WindowsEnforcer {
             engine_version: None,
             platform: "windows".into(),
             filesystem: FilesystemCapabilitySnapshot {
-                // Low-integrity token applied at spawn: agent cannot write to
-                // Medium-or-higher integrity paths (user profile dirs, system
-                // dirs). Reads are unrestricted. The project root requires an
-                // explicit Low mandatory label to remain writable by the agent.
+                // Low-integrity token + project-root SACL: agent cannot write to
+                // Medium-or-higher integrity paths; project root is patched to Low
+                // so the agent can write there.
                 enforcement: CapabilitySupport::Limited,
                 observation: CapabilitySupport::Unsupported,
                 temporary_file_coverage: CapabilitySupport::Unsupported,
                 atomic_rename_coverage: CapabilitySupport::Unsupported,
             },
             network: NetworkCapabilitySnapshot {
-                // WFP session opened; per-process filter implementation pending.
-                enforcement: CapabilitySupport::Unsupported,
+                // WFP per-app-ID outbound filter blocks network access.
+                enforcement: CapabilitySupport::Limited,
                 observation: CapabilitySupport::Unsupported,
                 proxy_awareness: CapabilitySupport::Unsupported,
             },
@@ -76,10 +73,10 @@ impl EnforcementEngine for WindowsEnforcer {
     }
 }
 
-/// Handle to an OS-level Job Object for a single session.
-///
-/// The job has KILL_ON_JOB_CLOSE set; when this handle is dropped (session end
-/// or panic), the OS terminates every process still in the job.
+// ---------------------------------------------------------------------------
+// Job Object — process tree containment
+// ---------------------------------------------------------------------------
+
 #[cfg(target_os = "windows")]
 pub struct WindowsJob {
     handle: windows_sys::Win32::Foundation::HANDLE,
@@ -87,10 +84,6 @@ pub struct WindowsJob {
 
 #[cfg(target_os = "windows")]
 impl WindowsJob {
-    /// Create a new job object and assign the process identified by `pid` to it.
-    ///
-    /// Returns `Err` if any Win32 call fails. The caller should treat this as a
-    /// non-fatal warning; the session still runs, just without job containment.
     pub fn assign(pid: u32) -> Result<Self, JobError> {
         use std::mem::{size_of, zeroed};
         use windows_sys::Win32::{
@@ -153,7 +146,6 @@ impl Drop for WindowsJob {
     }
 }
 
-// HANDLE is a kernel object handle; it is valid to send across threads.
 #[cfg(target_os = "windows")]
 unsafe impl Send for WindowsJob {}
 
@@ -185,15 +177,7 @@ impl std::error::Error for JobError {}
 /// Reduce the agent process to Low Integrity so the OS denies writes to all
 /// Medium-or-higher integrity paths (user profile, system directories, etc.).
 ///
-/// Called post-spawn. The process is already running; token integrity can be
-/// *lowered* from outside with TOKEN_ADJUST_DEFAULT (requires the caller to
-/// run at Medium or higher, which is the normal developer session).
-///
-/// **Limitation**: the project root directory typically has Medium mandatory
-/// integrity. The agent cannot write there until the project root's mandatory
-/// label is explicitly set to Low (SACL patching — Phase 3 follow-on). Until
-/// then, coding agents that write files will fail with access denied on their
-/// project directory. Tracked as a known gap in threat-model.md.
+/// Called post-spawn. Best-effort; session continues on failure.
 #[cfg(target_os = "windows")]
 pub fn set_process_low_integrity(pid: u32) -> Result<(), LowIntegrityError> {
     use core::ffi::c_void;
@@ -208,11 +192,9 @@ pub fn set_process_low_integrity(pid: u32) -> Result<(), LowIntegrityError> {
         System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION},
     };
 
-    // S-1-16-4096  (Mandatory Label Authority = 16, Sub-authority = 0x1000)
     const MANDATORY_LABEL_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
         SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 16] };
     const MANDATORY_LOW_RID: u32 = 0x1000;
-    // SE_GROUP_INTEGRITY = 0x00000020
     const SE_GROUP_INTEGRITY: u32 = 0x00000020;
 
     unsafe {
@@ -295,42 +277,273 @@ impl std::fmt::Display for LowIntegrityError {
 impl std::error::Error for LowIntegrityError {}
 
 // ---------------------------------------------------------------------------
-// WFP network guard — per-process outbound filter
+// Filesystem guard — project root SACL (Low mandatory label)
 // ---------------------------------------------------------------------------
 
-/// WFP session that will block outbound connections for a specific process.
+/// Set the mandatory integrity label on `path` to Low so that a Low-integrity
+/// agent process can write to the project root.
 ///
-/// Currently opens the WFP engine and holds a transaction-ready handle.
-/// Per-application-ID filter add is the Phase 3 follow-on: it requires
-/// resolving the NT device path from the Win32 executable path, which needs
-/// additional implementation and testing.
+/// By default directories inherit Medium integrity; a Low-integrity process
+/// cannot write to them. Patching the SACL to Low allows the agent to write
+/// while still blocking writes to all other Medium+ paths (user profile,
+/// system dirs, etc.). Requires the caller to run at Medium+ integrity.
+///
+/// Best-effort: session continues if this fails.
+#[cfg(target_os = "windows")]
+pub fn patch_project_low_integrity_label(path: &std::path::Path) -> Result<(), SaclError> {
+    use core::ffi::c_void;
+    use core::mem::size_of;
+    use windows_sys::Win32::Security::{
+        ACL, AllocateAndInitializeSid, FreeSid, GetLengthSid, InitializeAcl,
+        SID_IDENTIFIER_AUTHORITY, SYSTEM_MANDATORY_LABEL_NO_WRITE_UP,
+    };
+    use windows_sys::Win32::Security::Authorization::{
+        LABEL_SECURITY_INFORMATION, SE_FILE_OBJECT, SetNamedSecurityInfoW,
+    };
+
+    // AddMandatoryAce is defined in Win32::Security but needs explicit import.
+    use windows_sys::Win32::Security::AddMandatoryAce;
+
+    let wide: Vec<u16> = path
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0u16))
+        .collect();
+
+    const MANDATORY_LABEL_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
+        SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 16] };
+    const MANDATORY_LOW_RID: u32 = 0x1000;
+    // ACL_REVISION = 2
+    const ACL_REV: u32 = 2;
+
+    unsafe {
+        let mut low_sid: *mut c_void = core::ptr::null_mut();
+        if AllocateAndInitializeSid(
+            &MANDATORY_LABEL_AUTHORITY,
+            1,
+            MANDATORY_LOW_RID,
+            0, 0, 0, 0, 0, 0, 0,
+            &mut low_sid,
+        ) == 0 {
+            return Err(SaclError::AllocSidFailed);
+        }
+
+        let sid_len = GetLengthSid(low_sid) as usize;
+        // Buffer: ACL header (8) + ACE header (4) + ACCESS_MASK (4) + SID bytes.
+        let acl_size = size_of::<ACL>() + 8 + sid_len;
+        let acl_words = (acl_size + 3) / 4;
+        let mut acl_buf: Vec<u32> = vec![0u32; acl_words];
+        let acl_ptr = acl_buf.as_mut_ptr() as *mut ACL;
+
+        if InitializeAcl(acl_ptr, acl_size as u32, ACL_REV) == 0 {
+            FreeSid(low_sid);
+            return Err(SaclError::InitAclFailed);
+        }
+
+        // SYSTEM_MANDATORY_LABEL_NO_WRITE_UP: processes at Low IL can still
+        // write because the directory's IL equals the process's IL.
+        if AddMandatoryAce(acl_ptr, ACL_REV, 0, SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, low_sid) == 0
+        {
+            FreeSid(low_sid);
+            return Err(SaclError::AddAceFailed);
+        }
+
+        let result = SetNamedSecurityInfoW(
+            wide.as_ptr(),
+            SE_FILE_OBJECT,
+            LABEL_SECURITY_INFORMATION,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            acl_ptr,
+        );
+
+        FreeSid(low_sid);
+
+        if result != 0 {
+            Err(SaclError::SetSecurityInfoFailed(result))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SaclError {
+    AllocSidFailed,
+    InitAclFailed,
+    AddAceFailed,
+    SetSecurityInfoFailed(u32),
+}
+
+impl std::fmt::Display for SaclError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SaclError::AllocSidFailed => write!(f, "AllocateAndInitializeSid failed"),
+            SaclError::InitAclFailed => write!(f, "InitializeAcl failed"),
+            SaclError::AddAceFailed => write!(f, "AddMandatoryAce failed"),
+            SaclError::SetSecurityInfoFailed(code) => {
+                write!(f, "SetNamedSecurityInfoW failed with code {code:#010x}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SaclError {}
+
+// ---------------------------------------------------------------------------
+// WFP network guard — per-app-ID outbound filter
+// ---------------------------------------------------------------------------
+
+/// Resolve a short command name (e.g. "claude") to a full Win32 path by
+/// searching PATH. If the input already contains a path separator, returns it
+/// unchanged. Returns `None` if the executable cannot be located.
+#[cfg(target_os = "windows")]
+fn resolve_app_path(command: &str) -> Option<String> {
+    if command.contains('\\') || command.contains('/') {
+        return Some(command.to_string());
+    }
+    use windows_sys::Win32::Storage::FileSystem::SearchPathW;
+
+    let name_wide: Vec<u16> = command.encode_utf16().chain(std::iter::once(0u16)).collect();
+    let ext_wide: Vec<u16> = ".exe\0".encode_utf16().collect();
+    let mut buf = vec![0u16; 1024];
+    let mut file_part: *mut u16 = core::ptr::null_mut();
+
+    unsafe {
+        let len = SearchPathW(
+            core::ptr::null(),
+            name_wide.as_ptr(),
+            ext_wide.as_ptr(),
+            buf.len() as u32,
+            buf.as_mut_ptr(),
+            &mut file_part,
+        );
+        if len == 0 {
+            return None;
+        }
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
+    }
+}
+
+/// Convert a Win32 path (e.g. `C:\path\to\app.exe`) to an NT device path
+/// (e.g. `\Device\HarddiskVolume3\path\to\app.exe`) for use as a WFP app ID.
+/// Returns `None` if the path does not start with a drive letter or
+/// `QueryDosDeviceW` fails.
+#[cfg(target_os = "windows")]
+fn win32_to_nt_path(win32_path: &str) -> Option<String> {
+    use windows_sys::Win32::Storage::FileSystem::QueryDosDeviceW;
+
+    if win32_path.len() < 3 {
+        return None;
+    }
+    let mut chars = win32_path.chars();
+    let drive_letter = chars.next()?;
+    if !drive_letter.is_ascii_alphabetic() || chars.next()? != ':' {
+        return None;
+    }
+
+    let drive = &win32_path[..2]; // "C:"
+    let drive_wide: Vec<u16> = drive.encode_utf16().chain(std::iter::once(0u16)).collect();
+    let mut buf = vec![0u16; 512];
+
+    unsafe {
+        let len =
+            QueryDosDeviceW(drive_wide.as_ptr(), buf.as_mut_ptr(), buf.len() as u32);
+        if len == 0 {
+            return None;
+        }
+        let device_end = buf.iter().position(|&c| c == 0).unwrap_or(len as usize);
+        let device_path = String::from_utf16_lossy(&buf[..device_end]);
+        let rest = &win32_path[2..]; // "\path\to\app.exe"
+        Some(format!("{}{}", device_path, rest))
+    }
+}
+
+/// WFP session that blocks outbound connections for a specific application.
+///
+/// Opens a dynamic WFP engine session (all objects cleaned up on close) and
+/// adds per-app-ID BLOCK filters on the ALE connect layers for both IPv4 and
+/// IPv6. The filters are automatically removed when this guard is dropped.
 #[cfg(target_os = "windows")]
 pub struct WfpNetworkGuard {
     engine: windows_sys::Win32::Foundation::HANDLE,
-    filter_id: u64,
 }
 
 #[cfg(target_os = "windows")]
 impl WfpNetworkGuard {
-    /// Open a WFP engine session. Per-process filter add is not yet wired;
-    /// returns `Err(WfpError::FilterNotImplemented)` until Phase 3 follow-on.
-    pub fn open(_pid: u32, _app_path: &str) -> Result<Self, WfpError> {
-        use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
-            FwpmEngineOpen0, FWPM_SESSION0,
-        };
+    /// Open a WFP dynamic session and install outbound BLOCK filters for
+    /// `app_path`. Returns `Err` if the engine cannot be opened, the path
+    /// cannot be resolved, or the filter add fails. Non-fatal: the session
+    /// continues without network enforcement.
+    pub fn open(_pid: u32, app_path: &str) -> Result<Self, WfpError> {
         use core::mem::zeroed;
+        use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
+            FwpmEngineClose0, FwpmEngineOpen0, FwpmFilterAdd0, FWPM_FILTER0,
+            FWPM_FILTER_CONDITION0, FWPM_SESSION0, FWP_ACTION_BLOCK, FWP_BYTE_BLOB,
+            FWP_BYTE_BLOB_TYPE, FWP_CONDITION_VALUE0, FWP_CONDITION_VALUE0_0,
+            FWP_MATCH_EQUAL, FWPM_CONDITION_ALE_APP_ID, FWPM_LAYER_ALE_AUTH_CONNECT_V4,
+            FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+        };
+
+        let full_path = resolve_app_path(app_path).ok_or(WfpError::PathResolutionFailed)?;
+        let nt_path = win32_to_nt_path(&full_path).ok_or(WfpError::PathResolutionFailed)?;
+        // WFP app IDs are uppercased UTF-16LE with null terminator.
+        let nt_upper = nt_path.to_uppercase();
+        let mut nt_wide: Vec<u16> =
+            nt_upper.encode_utf16().chain(std::iter::once(0u16)).collect();
 
         unsafe {
             let mut engine: windows_sys::Win32::Foundation::HANDLE = 0;
-            let session: FWPM_SESSION0 = zeroed();
-            // RPC_C_AUTHN_WINNT = 10
-            let err = FwpmEngineOpen0(core::ptr::null(), 10, core::ptr::null(), &session, &mut engine);
+            let mut session: FWPM_SESSION0 = zeroed();
+            // FWPM_SESSION_FLAG_DYNAMIC = 1: all created objects are deleted
+            // automatically when the session (engine handle) is closed.
+            session.flags = 1;
+            let err =
+                FwpmEngineOpen0(core::ptr::null(), 10, core::ptr::null(), &session, &mut engine);
             if err != 0 {
                 return Err(WfpError::EngineOpenFailed(err));
             }
-            // Per-application-ID filter add requires NT device path resolution.
-            // Tracked for Phase 3 completion.
-            Err(WfpError::FilterNotImplemented)
+
+            let app_id = FWP_BYTE_BLOB {
+                size: (nt_wide.len() * 2) as u32,
+                data: nt_wide.as_mut_ptr() as *mut u8,
+            };
+
+            let condition = FWPM_FILTER_CONDITION0 {
+                fieldKey: FWPM_CONDITION_ALE_APP_ID,
+                matchType: FWP_MATCH_EQUAL,
+                conditionValue: FWP_CONDITION_VALUE0 {
+                    r#type: FWP_BYTE_BLOB_TYPE,
+                    Anonymous: FWP_CONDITION_VALUE0_0 {
+                        byteBlob: &app_id as *const FWP_BYTE_BLOB as *mut FWP_BYTE_BLOB,
+                    },
+                },
+            };
+
+            let mut filter: FWPM_FILTER0 = zeroed();
+            filter.numFilterConditions = 1;
+            filter.filterCondition = &condition as *const FWPM_FILTER_CONDITION0
+                as *mut FWPM_FILTER_CONDITION0;
+            filter.action.r#type = FWP_ACTION_BLOCK;
+
+            filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
+            let mut id = 0u64;
+            let err = FwpmFilterAdd0(engine, &filter, core::ptr::null(), &mut id);
+            if err != 0 {
+                FwpmEngineClose0(engine);
+                return Err(WfpError::FilterAddFailed(err));
+            }
+
+            filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
+            let err = FwpmFilterAdd0(engine, &filter, core::ptr::null(), &mut id);
+            if err != 0 {
+                // IPv4 filter is session-scoped; closing engine removes it.
+                FwpmEngineClose0(engine);
+                return Err(WfpError::FilterAddFailed(err));
+            }
+
+            Ok(Self { engine })
         }
     }
 }
@@ -338,37 +551,126 @@ impl WfpNetworkGuard {
 #[cfg(target_os = "windows")]
 impl Drop for WfpNetworkGuard {
     fn drop(&mut self) {
-        use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
-            FwpmEngineClose0, FwpmFilterDeleteById0,
-        };
         unsafe {
-            if self.filter_id != 0 {
-                FwpmFilterDeleteById0(self.engine, self.filter_id);
-            }
-            FwpmEngineClose0(self.engine);
+            // Dynamic session: all filters auto-deleted on close.
+            windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FwpmEngineClose0(
+                self.engine,
+            );
         }
     }
 }
 
-// HANDLE is a kernel object handle; safe to send across threads.
 #[cfg(target_os = "windows")]
 unsafe impl Send for WfpNetworkGuard {}
 
 #[derive(Debug)]
 pub enum WfpError {
     EngineOpenFailed(u32),
-    FilterNotImplemented,
+    PathResolutionFailed,
+    FilterAddFailed(u32),
 }
 
 impl std::fmt::Display for WfpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WfpError::EngineOpenFailed(code) => write!(f, "FwpmEngineOpen0 failed with code {code:#010x}"),
-            WfpError::FilterNotImplemented => {
-                write!(f, "per-process WFP filter not yet implemented (Phase 3 follow-on)")
+            WfpError::EngineOpenFailed(code) => {
+                write!(f, "FwpmEngineOpen0 failed with code {code:#010x}")
+            }
+            WfpError::PathResolutionFailed => {
+                write!(f, "could not resolve app path to NT device path for WFP filter")
+            }
+            WfpError::FilterAddFailed(code) => {
+                write!(f, "FwpmFilterAdd0 failed with code {code:#010x}")
             }
         }
     }
 }
 
 impl std::error::Error for WfpError {}
+
+// ---------------------------------------------------------------------------
+// ETW audit provider
+// ---------------------------------------------------------------------------
+
+/// Rampart audit ETW provider GUID.
+/// {7E5A6B4C-F3D2-4A81-9B62-C1E0A4B8D7F6}
+#[cfg(target_os = "windows")]
+const RAMPART_PROVIDER_GUID: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x7E5A6B4C,
+    data2: 0xF3D2,
+    data3: 0x4A81,
+    data4: [0x9B, 0x62, 0xC1, 0xE0, 0xA4, 0xB8, 0xD7, 0xF6],
+};
+
+/// ETW provider that emits audit events from the Rampart daemon.
+///
+/// Events can be captured with:
+///   `logman start RampartTrace -p {7E5A6B4C-...} -o rampart.etl -ets`
+///
+/// Registration is best-effort; if `EventRegister` fails the struct is not
+/// created and the daemon continues without ETW emission.
+#[cfg(target_os = "windows")]
+pub struct EtwAuditProvider {
+    handle: u64, // REGHANDLE
+}
+
+#[cfg(target_os = "windows")]
+impl EtwAuditProvider {
+    pub fn register() -> Result<Self, EtwError> {
+        use windows_sys::Win32::System::Diagnostics::Etw::EventRegister;
+        unsafe {
+            let mut handle: u64 = 0;
+            let err = EventRegister(&RAMPART_PROVIDER_GUID, None, core::ptr::null(), &mut handle);
+            if err != 0 {
+                return Err(EtwError::RegisterFailed(err));
+            }
+            Ok(Self { handle })
+        }
+    }
+
+    /// Emit a string audit event. Silently drops on failure.
+    pub fn write_audit_event(
+        &self,
+        session_id: &str,
+        kind: &str,
+        outcome: &str,
+        message: &str,
+    ) {
+        use windows_sys::Win32::System::Diagnostics::Etw::EventWriteString;
+        let text = format!("[rampart] session={session_id} kind={kind} outcome={outcome} {message}");
+        let mut wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0u16)).collect();
+        unsafe {
+            // level=0 (verbose), keyword=0 (all)
+            EventWriteString(self.handle, 0, 0, wide.as_mut_ptr());
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for EtwAuditProvider {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::System::Diagnostics::Etw::EventUnregister(self.handle);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for EtwAuditProvider {}
+
+#[derive(Debug)]
+pub enum EtwError {
+    RegisterFailed(u32),
+}
+
+impl std::fmt::Display for EtwError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EtwError::RegisterFailed(code) => {
+                write!(f, "EventRegister failed with code {code:#010x}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EtwError {}
