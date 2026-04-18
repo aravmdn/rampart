@@ -9,6 +9,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 engine-greywall = { path = "../../../crates/engine-greywall" }
+engine-windows = { path = "../../../crates/engine-windows" }
 rampartd = { path = "../../../crates/rampartd" }
 policy-core = { path = "../../../crates/policy-core" }
 serde = { version = "1.0", features = ["derive"] }

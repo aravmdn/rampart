@@ -4,6 +4,7 @@ members = [
   "crates/rampartd",
   "crates/policy-core",
   "crates/engine-greywall",
+  "crates/engine-windows",
 ]
 resolver = "2"
 

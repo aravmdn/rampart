@@ -1,4 +1,6 @@
 use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
+#[cfg(target_os = "windows")]
+use engine_windows::WindowsJob;
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
     AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
@@ -674,9 +676,20 @@ pub struct ManagedProcess {
     pub command: String,
 }
 
-#[derive(Default)]
 pub struct LocalProcessRunner {
     children: HashMap<String, Child>,
+    #[cfg(target_os = "windows")]
+    jobs: HashMap<String, WindowsJob>,
+}
+
+impl Default for LocalProcessRunner {
+    fn default() -> Self {
+        Self {
+            children: HashMap::new(),
+            #[cfg(target_os = "windows")]
+            jobs: HashMap::new(),
+        }
+    }
 }
 
 impl LocalProcessRunner {
@@ -698,6 +711,21 @@ impl LocalProcessRunner {
             source,
         })?;
         let pid = child.id();
+
+        #[cfg(target_os = "windows")]
+        match WindowsJob::assign(pid) {
+            Ok(job) => {
+                self.jobs.insert(session.id.clone(), job);
+            }
+            Err(error) => {
+                // Non-fatal: session still runs, just without job containment.
+                eprintln!(
+                    "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
+                    session.id
+                );
+            }
+        }
+
         self.children.insert(session.id.clone(), child);
         Ok(ManagedProcess {
             pid: Some(pid),
@@ -706,6 +734,11 @@ impl LocalProcessRunner {
     }
 
     fn stop_session(&mut self, session_id: &str) -> Result<(), ProcessRunnerError> {
+        // Drop the job handle first so KILL_ON_JOB_CLOSE fires before we call
+        // child.kill(). On non-Windows the map removal is a no-op compile-out.
+        #[cfg(target_os = "windows")]
+        drop(self.jobs.remove(session_id));
+
         let mut child = self
             .children
             .remove(session_id)

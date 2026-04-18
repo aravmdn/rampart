@@ -1,6 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
+use engine_windows::WindowsEnforcer;
+#[cfg(not(target_os = "windows"))]
 use engine_greywall::GreywallAdapter;
+
+#[cfg(target_os = "windows")]
+type ActiveEngine = WindowsEnforcer;
+#[cfg(not(target_os = "windows"))]
+type ActiveEngine = GreywallAdapter;
+
 use rampartd::{
     DaemonApi, LaunchSessionRequest, LocalDataStore, PreflightReport, ProfileDetail, RampartService,
     SelectedLaunchConfig, ServiceQueryApi, SessionEventRecord, SessionHistoryRecord,
@@ -11,7 +20,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 struct DesktopDaemonState {
-    service: Mutex<RampartService>,
+    service: Mutex<RampartService<ActiveEngine>>,
 }
 
 #[derive(Serialize)]
@@ -148,13 +157,17 @@ fn preflight_check(
         .map_err(|error| error.to_string())
 }
 
-fn build_service() -> Result<RampartService, String> {
-    let adapter = GreywallAdapter::discover().map_err(|error| error.to_string())?;
+fn build_service() -> Result<RampartService<ActiveEngine>, String> {
+    #[cfg(target_os = "windows")]
+    let engine = WindowsEnforcer::new();
+    #[cfg(not(target_os = "windows"))]
+    let engine = GreywallAdapter::discover().map_err(|error| error.to_string())?;
+
     let root = std::env::current_dir()
         .map_err(|error| error.to_string())?
         .join(".rampart");
     let store = LocalDataStore::open(root).map_err(|error| error.to_string())?;
-    RampartService::new(adapter, store).map_err(|error| error.to_string())
+    RampartService::new(engine, store).map_err(|error| error.to_string())
 }
 
 fn main() {
