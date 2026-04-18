@@ -68,6 +68,17 @@ Supporting architecture should therefore include:
 - The repo should not assume one engine is the permanent runtime
 - Public docs should surface limitations instead of implying unsupported protection
 
+## Windows enforcement engine (Phase 3 — current)
+
+MVP requires real OS-level enforcement. The engine adapter for Windows will own:
+
+- Process containment scoped to the agent and its job tree
+- Network allow/block enforcement per profile policy, evaluated before connections complete
+- Filesystem write scoping bounded to the project directory
+- Audit event emission into the existing `AuditEventKind` taxonomy
+
+The engine adapter boundary keeps enforcement implementation details out of the daemon and desktop layers. Stronger isolation modes are preserved as a clean seam for later phases.
+
 ## Phase 1 and early Phase 2 implementation status
 
 The following Phase 1 priorities are complete:

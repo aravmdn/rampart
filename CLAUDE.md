@@ -98,8 +98,14 @@ Phases 1 and 2 are complete. Do not rewrite or re-add:
 - Profile editor view in `App.tsx` with "Edit selected profile" entry from launcher
 - Policy refinement flow: "Adjust policy" on violations → editor pre-populated with targeted suggestion
 
-Current focus is Phase 3 foundations:
-- Shared policies, signed profile distribution, centralized audit sync, org settings
+Current focus is Phase 3 — Windows enforcement engine (MVP gate):
+- Windows Job Objects for process tree containment
+- Windows Filtering Platform (WFP) for per-PID network enforcement
+- Directory ACL scoping for filesystem write containment
+- ETW wired into the existing AuditEventKind taxonomy
+- Honest threat model docs (accidental overreach, not adversarial containment)
+- WSL2 stronger isolation mode as a fast-follow
+- AppContainer left as a clean seam for Phase 5
 
 ## End-of-session checklist
 

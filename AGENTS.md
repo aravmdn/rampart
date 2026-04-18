@@ -81,10 +81,17 @@ Reference-informed next steps inside those phases:
 - Phase 2 (complete):
   - profile editing UI implemented: ProfileEditorPanel renders policy in product language; accessible from the launcher via "Edit selected profile"
   - safe policy refinement flow implemented: each violation in the session console carries an "Adjust policy" button that derives a rule suggestion and opens the profile editor pre-populated with it
-- Current focus (Phase 3 foundations):
+- Current focus (Phase 3 — Windows enforcement engine, MVP gate):
+  - Windows Job Objects for process tree containment
+  - Windows Filtering Platform (WFP) for per-PID network enforcement
+  - Directory ACL scoping for filesystem write containment
+  - ETW wired into the existing AuditEventKind taxonomy
+  - Honest threat model docs: accidental overreach, not adversarial containment
+  - WSL2 stronger isolation mode as a fast-follow
+- Phase 4 (after enforcement):
   - shared policies, signed profile distribution, centralized audit sync, org settings
-- Later phases:
-  - add headless launch paths and remote or bridge attachment only after the local loop is trustworthy
+- Phase 5 (later):
+  - headless launch paths, AppContainer isolation mode, broader engine support, enterprise controls
 
 ## Cross-domain workflows
 - Desktop -> daemon:

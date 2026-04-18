@@ -34,12 +34,28 @@ Reference-driven priorities inside this phase:
 - Define a stable event taxonomy for launch, allow, block, alert, stop, and policy-change records.
 - Treat resume and history as first-class local data, not transient UI state.
 
-## Phase 3
+## Phase 3 — Windows enforcement engine (MVP gate)
 
-- Team features behind explicit boundaries
-- Shared policies
-- Signed profile distribution
+This is the gate phase. MVP is not done until real OS-level blocking is in place.
+
+- Process containment: the agent and its children cannot escape the scoped execution boundary
+- Network enforcement: outbound connections are allowed or blocked per profile policy
+- Filesystem write scoping: write access is bounded to the project directory
+- Audit trail wired into the existing event taxonomy
+
+Reference-driven priorities inside this phase:
+
+- Use OS-native enforcement primitives. Do not use fragile in-process hooking approaches.
+- Scope enforcement to the agent process, not machine-wide rules.
+- Surface enforcement capability gaps honestly in preflight.
+- Wire enforcement events into the existing audit taxonomy without inventing a separate format.
+- Leave a clean seam for stronger isolation modes in later phases.
+
+## Phase 4 — Team and distribution features
+
+- Shared policies and signed profile distribution
 - Centralized audit sync
+- Org settings behind clear team/individual boundaries
 
 Reference-driven priorities inside this phase:
 
@@ -47,17 +63,18 @@ Reference-driven priorities inside this phase:
 - Reuse the local event model and profile schema for sync features instead of inventing separate admin-only formats.
 - Treat remote or bridge workflows as access patterns layered on top of local execution, not as a separate product core.
 
-## Phase 4
+## Phase 5 — Headless, CI, and broader engine support
 
-- Headless and CI modes
-- Broader engine support
+- Headless `rampart run -- <agent command>` path reusing desktop launch adapters and compiled profiles
+- Per-agent capability matrices and compatibility checks
+- AppContainer isolation mode for stronger process-level sandboxing
 - Enterprise controls where justified
 
 Reference-driven priorities inside this phase:
 
-- Add a headless `rampart run -- <agent command>` path that reuses desktop launch adapters and compiled profiles.
-- Add per-agent capability matrices and compatibility checks so broader support does not weaken the core contract.
-- Consider plugin and extension points only after Windows launch, enforcement, and explanation loops are trustworthy.
+- Add headless before enterprise. A CLI path that reuses the daemon's enforcement stack is more valuable earlier than SSO or governance dashboards.
+- Add per-agent capability matrices so broader agent support does not weaken the enforcement contract.
+- Consider plugin and extension points only after Windows enforcement, explanation, and distribution loops are trustworthy.
 
 ## What Changed From Research Review
 

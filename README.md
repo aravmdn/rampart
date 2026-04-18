@@ -135,7 +135,9 @@ Phase 1 and early Phase 2 priorities are now complete:
 - Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
 - Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Phase 2 is complete. Remaining emphasis moves to Phase 3 foundations:
+Phase 2 is complete. Current emphasis is Phase 3 — real Windows enforcement, which is the MVP gate.
+
+MVP is defined as: a user can pick an agent, project, and profile; launch through Rampart; have a real OS-level block occur when the agent attempts a disallowed action; and see that violation explained in the UI. Everything before Phase 3 is the shell. Phase 3 is the product.
 
 ## Getting Started
 
