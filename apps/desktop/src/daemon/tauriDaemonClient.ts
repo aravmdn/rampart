@@ -63,6 +63,15 @@ type RawViolation = {
   } | null;
 };
 
+type RawAuditEventInBatch = {
+  kind: string;
+  category: string;
+  message: string;
+  session_id: string;
+  sequence: number;
+  occurred_at_ms: number;
+};
+
 type RawHistoryEntry = {
   session: {
     id: string;
@@ -198,7 +207,34 @@ export const tauriDaemonClient: DaemonApi = {
     return mapSessionState(response);
   },
   async streamSessionEvents(sessionId: string) {
-    return invoke<{ audit: any[]; violations: any[] }>("stream_session_events", { sessionId });
+    const raw = await invoke<{ audit: RawAuditEventInBatch[]; violations: RawViolation[] }>(
+      "stream_session_events",
+      { sessionId },
+    );
+    return {
+      audit: raw.audit.map((event, index) => ({
+        id: `${sessionId}-event-${index}`,
+        kind: mapAuditKind(event.kind),
+        category: mapAuditCategory(event.category),
+        message: event.message,
+      })),
+      violations: raw.violations.map((violation, index) => ({
+        id: `${sessionId}-violation-${index}`,
+        operation: violation.action,
+        target: violation.target,
+        ruleId: violation.rule_id,
+        ruleLabel: violation.rule_label ?? "",
+        message: violation.reason,
+        platformNote: violation.platform_note ?? null,
+        explanation: violation.explanation
+          ? {
+              ruleDescription: violation.explanation.rule_description,
+              platformLimitation: violation.explanation.platform_limitation ?? null,
+              remediationHint: violation.explanation.remediation_hint ?? null,
+            }
+          : null,
+      })),
+    };
   },
   async loadProfile(profileId: string): Promise<ProfileDetail> {
     return invoke<ProfileDetail>("load_profile", { profileId });

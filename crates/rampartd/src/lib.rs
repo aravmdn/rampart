@@ -315,6 +315,97 @@ pub fn flatten_capabilities(snapshot: &EngineCapabilitySnapshot) -> Vec<FlatCapa
     ]
 }
 
+// ---------------------------------------------------------------------------
+// Profile detail (flat view consumed by the UI)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileFilesystem {
+    pub readable_roots: Vec<String>,
+    pub writable_roots: Vec<String>,
+    pub blocked_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileNetwork {
+    pub default_action: policy_core::DefaultAction,
+    pub allowed_hosts: Vec<String>,
+    pub blocked_hosts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileProcess {
+    pub default_action: policy_core::DefaultAction,
+    pub allowed_commands: Vec<String>,
+    pub blocked_commands: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileDetail {
+    pub id: String,
+    pub display_name: String,
+    pub detail: String,
+    pub filesystem: ProfileFilesystem,
+    pub network: ProfileNetwork,
+    pub process: ProfileProcess,
+}
+
+impl ProfileDetail {
+    fn from_profile(profile: &Profile) -> Self {
+        Self {
+            id: profile.id.clone(),
+            display_name: profile.name.clone(),
+            detail: profile.description.clone().unwrap_or_default(),
+            filesystem: ProfileFilesystem {
+                readable_roots: profile.policy.filesystem.readable_roots.clone(),
+                writable_roots: profile.policy.filesystem.writable_roots.clone(),
+                blocked_roots: profile.policy.filesystem.blocked_roots.clone(),
+            },
+            network: ProfileNetwork {
+                default_action: profile.policy.network.default_action,
+                allowed_hosts: profile.policy.network.allowed_hosts.clone(),
+                blocked_hosts: profile.policy.network.blocked_hosts.clone(),
+            },
+            process: ProfileProcess {
+                default_action: profile.policy.process.default_action,
+                allowed_commands: profile.policy.process.allowed_commands.clone(),
+                blocked_commands: profile.policy.process.blocked_commands.clone(),
+            },
+        }
+    }
+
+    fn into_profile(self) -> Profile {
+        use policy_core::{FilesystemPolicy, NetworkPolicy, Policy, ProcessPolicy};
+        Profile {
+            id: self.id,
+            name: self.display_name,
+            description: if self.detail.is_empty() { None } else { Some(self.detail) },
+            extends: None,
+            policy: Policy {
+                filesystem: FilesystemPolicy {
+                    readable_roots: self.filesystem.readable_roots,
+                    writable_roots: self.filesystem.writable_roots,
+                    blocked_roots: self.filesystem.blocked_roots,
+                },
+                network: NetworkPolicy {
+                    default_action: self.network.default_action,
+                    allowed_hosts: self.network.allowed_hosts,
+                    blocked_hosts: self.network.blocked_hosts,
+                },
+                process: ProcessPolicy {
+                    default_action: self.process.default_action,
+                    allowed_commands: self.process.allowed_commands,
+                    blocked_commands: self.process.blocked_commands,
+                },
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LaunchSessionRequest {
     pub project_dir: String,
@@ -698,6 +789,8 @@ pub struct SessionHistoryRecord {
 struct PersistedState {
     selected: SelectedLaunchConfig,
     history: Vec<SessionHistoryRecord>,
+    #[serde(default)]
+    custom_profiles: Vec<ProfileDetail>,
 }
 
 #[derive(Debug, Clone)]
@@ -761,6 +854,8 @@ pub trait ServiceQueryApi {
         agent_id: &str,
         profile_id: &str,
     ) -> Result<PreflightReport, ServiceError>;
+    fn load_profile(&self, profile_id: &str) -> Result<ProfileDetail, ServiceError>;
+    fn save_profile(&self, detail: ProfileDetail) -> Result<(), ServiceError>;
 }
 
 pub struct RampartService<E = GreywallAdapter> {
@@ -912,6 +1007,46 @@ where
             .ok_or_else(|| ServiceError::Daemon(DaemonError::UnknownProfile(profile_id.into())))?;
         let capabilities = self.daemon.detect_capabilities()?;
         Ok(run_preflight(project_dir, &agent_tool, &profile, &capabilities))
+    }
+
+    fn load_profile(&self, profile_id: &str) -> Result<ProfileDetail, ServiceError> {
+        let state = self.store.load_state()?;
+        // Custom profiles take precedence over presets.
+        if let Some(custom) = state.custom_profiles.iter().find(|p| p.id == profile_id) {
+            return Ok(custom.clone());
+        }
+        // Fall back to presets.
+        let project_root = detect_repo_root()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| r"C:\projects\rampart".into());
+        for tool in &[
+            policy_core::AgentTool::ClaudeCode,
+            policy_core::AgentTool::Codex,
+            policy_core::AgentTool::Aider,
+        ] {
+            for preset in policy_core::agent_profile_presets(tool, &project_root) {
+                if preset.id == profile_id {
+                    return Ok(ProfileDetail::from_profile(&preset));
+                }
+            }
+        }
+        for preset in policy_core::desktop_profile_presets(&project_root) {
+            if preset.id == profile_id {
+                return Ok(ProfileDetail::from_profile(&preset));
+            }
+        }
+        Err(ServiceError::Daemon(DaemonError::UnknownProfile(profile_id.into())))
+    }
+
+    fn save_profile(&self, detail: ProfileDetail) -> Result<(), ServiceError> {
+        let mut state = self.store.load_state()?;
+        if let Some(existing) = state.custom_profiles.iter_mut().find(|p| p.id == detail.id) {
+            *existing = detail;
+        } else {
+            state.custom_profiles.push(detail);
+        }
+        self.store.save_state(&state)?;
+        Ok(())
     }
 }
 
