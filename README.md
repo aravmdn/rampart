@@ -135,7 +135,14 @@ Phase 1 and early Phase 2 priorities are now complete:
 - Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
 - Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Phase 2 is complete. Current emphasis is Phase 3 — real Windows enforcement, which is the MVP gate.
+Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) is in progress:
+
+- **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` are live. The agent and all child processes are contained in a job; the OS terminates the tree when the session ends or Rampart exits.
+- **Filesystem write restriction**: agent processes are launched at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile directories, system directories — without any custom hooks. Reads are unrestricted.
+- **Network enforcement**: a WFP engine session is opened per agent process. Per-application-ID outbound blocking is the next step; the session open/close lifecycle is already wired.
+- **Honest threat model**: enforcement targets accidental overreach by well-behaved agents, not adversarial processes issuing direct syscalls. This is the real AI coding-agent threat.
+
+Remaining before MVP is complete: project root SACL patching (so the low-integrity agent can write to its own project directory), WFP per-app filter add, ETW audit trail, and end-to-end violation flow tested.
 
 MVP is defined as: a user can pick an agent, project, and profile; launch through Rampart; have a real OS-level block occur when the agent attempts a disallowed action; and see that violation explained in the UI. Everything before Phase 3 is the shell. Phase 3 is the product.
 

@@ -68,9 +68,9 @@ Supporting architecture should therefore include:
 - The repo should not assume one engine is the permanent runtime
 - Public docs should surface limitations instead of implying unsupported protection
 
-## Windows enforcement engine (Phase 3 — current)
+## Windows enforcement engine (Phase 3 — in progress)
 
-MVP requires real OS-level enforcement. The engine adapter for Windows will own:
+MVP requires real OS-level enforcement. The engine adapter for Windows owns:
 
 - Process containment scoped to the agent and its job tree
 - Network allow/block enforcement per profile policy, evaluated before connections complete
@@ -78,6 +78,16 @@ MVP requires real OS-level enforcement. The engine adapter for Windows will own:
 - Audit event emission into the existing `AuditEventKind` taxonomy
 
 The engine adapter boundary keeps enforcement implementation details out of the daemon and desktop layers. Stronger isolation modes are preserved as a clean seam for later phases.
+
+### Phase 3 implementation status
+
+**Process containment** — complete. `WindowsJob` creates a Job Object with `KILL_ON_JOB_CLOSE` and assigns the agent process at spawn. The OS kills the entire process tree when the job handle is dropped (session end or Rampart exit). Implemented in `engine-windows`, wired in `LocalProcessRunner`.
+
+**Filesystem write restriction** — partial. `set_process_low_integrity()` sets the agent's process token to Low Integrity (S-1-16-4096) post-spawn via `SetTokenInformation(TokenIntegrityLevel)`. The OS denies writes to all Medium-or-higher integrity paths without custom hooks. Known gap: the project root directory has Medium integrity by default; the agent cannot write there until the project root's mandatory SACL label is explicitly set to Low. SACL patching is the next step.
+
+**Network enforcement** — skeleton. `WfpNetworkGuard` opens a WFP engine session per agent process. Per-application-ID outbound blocking requires resolving the NT device path from the Win32 executable path; that step is the immediate follow-on. The guard open/close lifecycle is fully wired.
+
+**Audit trail** — pending. ETW subscription and mapping into `AuditEventKind` is deferred until enforcement primitives are complete.
 
 ## Phase 1 and early Phase 2 implementation status
 

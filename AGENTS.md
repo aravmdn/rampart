@@ -82,11 +82,11 @@ Reference-informed next steps inside those phases:
   - profile editing UI implemented: ProfileEditorPanel renders policy in product language; accessible from the launcher via "Edit selected profile"
   - safe policy refinement flow implemented: each violation in the session console carries an "Adjust policy" button that derives a rule suggestion and opens the profile editor pre-populated with it
 - Current focus (Phase 3 — Windows enforcement engine, MVP gate):
-  - Windows Job Objects for process tree containment
-  - Windows Filtering Platform (WFP) for per-PID network enforcement
-  - Directory ACL scoping for filesystem write containment
-  - ETW wired into the existing AuditEventKind taxonomy
-  - Honest threat model docs: accidental overreach, not adversarial containment
+  - Done: Windows Job Objects for process tree containment (`WindowsJob` in engine-windows, wired in `LocalProcessRunner`)
+  - Done: Low-integrity token applied post-spawn (`set_process_low_integrity` in engine-windows); restricts agent writes to Medium+ integrity paths
+  - Done: WFP engine session open/close skeleton (`WfpNetworkGuard`); per-app-ID filter add is next
+  - Done: `threat-model.md` — honest accidental-overreach framing, current gaps, WSL2/AppContainer seam
+  - Remaining: project root SACL patching, WFP per-app filter add, ETW audit trail, end-to-end violation flow
   - WSL2 stronger isolation mode as a fast-follow
 - Phase 4 (after enforcement):
   - shared policies, signed profile distribution, centralized audit sync, org settings

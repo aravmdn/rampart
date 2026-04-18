@@ -98,13 +98,19 @@ Phases 1 and 2 are complete. Do not rewrite or re-add:
 - Profile editor view in `App.tsx` with "Edit selected profile" entry from launcher
 - Policy refinement flow: "Adjust policy" on violations → editor pre-populated with targeted suggestion
 
-Current focus is Phase 3 — Windows enforcement engine (MVP gate):
-- Windows Job Objects for process tree containment
-- Windows Filtering Platform (WFP) for per-PID network enforcement
-- Directory ACL scoping for filesystem write containment
-- ETW wired into the existing AuditEventKind taxonomy
-- Honest threat model docs (accidental overreach, not adversarial containment)
-- WSL2 stronger isolation mode as a fast-follow
+Phase 3 (Windows enforcement engine, MVP gate) — in progress:
+- `WindowsJob` in engine-windows: Job Object process tree containment, wired in `LocalProcessRunner`
+- `set_process_low_integrity()` in engine-windows: post-spawn token integrity reduction to Low (S-1-16-4096); restricts agent writes to Medium+ integrity paths (user profile, system dirs); best-effort
+- `WfpNetworkGuard` in engine-windows: WFP engine session open/close skeleton; per-app-ID outbound filter add is next (requires NT device path resolution)
+- `threat-model.md`: honest accidental-overreach framing, current gaps, WSL2/AppContainer seam
+- KNOWN GAP: agent cannot write to project root at Medium integrity until project root SACL is patched to Low
+
+Remaining for Phase 3 MVP gate:
+- Project root SACL patching (Low mandatory label on project_path so agent can write there)
+- WFP per-app-ID filter add
+- ETW audit trail wired into AuditEventKind taxonomy
+- End-to-end violation flow tested
+- WSL2 stronger isolation mode (fast-follow)
 - AppContainer left as a clean seam for Phase 5
 
 ## End-of-session checklist
