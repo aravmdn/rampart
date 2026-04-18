@@ -101,15 +101,13 @@ Phases 1 and 2 are complete. Do not rewrite or re-add:
 Phase 3 (Windows enforcement engine, MVP gate) — in progress:
 - `WindowsJob` in engine-windows: Job Object process tree containment, wired in `LocalProcessRunner`
 - `set_process_low_integrity()` in engine-windows: post-spawn token integrity reduction to Low (S-1-16-4096); restricts agent writes to Medium+ integrity paths (user profile, system dirs); best-effort
-- `WfpNetworkGuard` in engine-windows: WFP engine session open/close skeleton; per-app-ID outbound filter add is next (requires NT device path resolution)
+- `WfpNetworkGuard` in engine-windows: full per-app-ID outbound BLOCK filter; SearchPathW resolves command → full path; QueryDosDeviceW converts to NT device path; FWPM_CONDITION_ALE_APP_ID on ALE connect V4+V6; dynamic WFP session auto-removes filters on Drop
+- `patch_project_low_integrity_label()` in engine-windows: sets Low mandatory label on project root SACL via SetNamedSecurityInfoW + AddMandatoryAce; called in spawn_session before launch; resolves the project-root write gap
+- `EtwAuditProvider` in engine-windows: registers Rampart ETW provider (GUID 7E5A6B4C-...); EventWriteString on every AuditEvent; wired into RampartDaemon for ingest_raw_event, launch_session, stop_session
 - `threat-model.md`: honest accidental-overreach framing, current gaps, WSL2/AppContainer seam
-- KNOWN GAP: agent cannot write to project root at Medium integrity until project root SACL is patched to Low
 
 Remaining for Phase 3 MVP gate:
-- Project root SACL patching (Low mandatory label on project_path so agent can write there)
-- WFP per-app-ID filter add
-- ETW audit trail wired into AuditEventKind taxonomy
-- End-to-end violation flow tested
+- End-to-end violation flow tested at runtime (requires Windows + admin rights)
 - WSL2 stronger isolation mode (fast-follow)
 - AppContainer left as a clean seam for Phase 5
 
