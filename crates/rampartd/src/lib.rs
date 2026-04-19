@@ -446,10 +446,13 @@ impl ProfileDetail {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LaunchSessionRequest {
+    #[serde(rename = "projectPath")]
     pub project_dir: String,
-    pub agent_tool: AgentTool,
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    #[serde(rename = "profileId")]
     pub profile_id: String,
-    #[serde(default)]
+    #[serde(rename = "isolationMode", default)]
     pub isolation_mode: policy_core::IsolationMode,
 }
 
@@ -613,7 +616,7 @@ where
         let session = Session {
             id: session_id.clone(),
             project_path: request.project_dir,
-            agent_tool: request.agent_tool,
+            agent_tool: agent_tool_from_id(&request.agent_id),
             profile_id: profile.id.clone(),
             compiled_policy,
             status: SessionStatus::Running,
