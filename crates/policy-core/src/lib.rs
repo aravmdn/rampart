@@ -452,6 +452,17 @@ pub fn compile_policy(policy: &Policy) -> Result<CompiledPolicy, ValidationError
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum IsolationMode {
+    /// Windows-native enforcement: Job Objects + WFP + Low Integrity token + SACL.
+    #[default]
+    WindowsNative,
+    /// Run the agent inside WSL2 for Linux-native enforcement (Landlock + seccomp).
+    /// Only meaningful on Windows hosts with WSL2 installed.
+    Wsl2,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionStatus {
@@ -473,6 +484,8 @@ pub struct Session {
     pub started_at_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at_ms: Option<u64>,
+    #[serde(default)]
+    pub isolation_mode: IsolationMode,
 }
 
 impl Session {

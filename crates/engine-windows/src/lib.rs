@@ -6,6 +6,7 @@ use policy_core::{
 use std::path::PathBuf;
 
 pub const ENGINE_ID: &str = "windows-native";
+pub const WSL2_ENGINE_ID: &str = "wsl2";
 
 /// Windows-native enforcement engine.
 ///
@@ -61,6 +62,66 @@ impl EnforcementEngine for WindowsEnforcer {
             process: ProcessCapabilitySnapshot {
                 // Job Objects: agent process tree is contained. OS kills all
                 // children when the job handle is dropped at session end.
+                enforcement: CapabilitySupport::Supported,
+                observation: CapabilitySupport::Limited,
+                termination: CapabilitySupport::Supported,
+            },
+        }
+    }
+
+    fn normalize_event(&self, event: RawEngineEvent) -> NormalizedEngineEvent {
+        self.greywall.normalize_event(event)
+    }
+}
+
+/// WSL2 enforcement engine (stronger isolation mode).
+///
+/// Surfaces `Supported` capabilities because the agent runs inside a Linux VM
+/// where kernel-level enforcement (Landlock + seccomp) applies natively via the
+/// existing greywall adapter. The host Win32 enforcement hooks are not used.
+pub struct Wsl2Enforcer {
+    greywall: GreywallAdapter,
+}
+
+impl Wsl2Enforcer {
+    pub fn new() -> Self {
+        Self {
+            greywall: GreywallAdapter {
+                binary_path: PathBuf::new(),
+                version: GreywallVersion { major: 0, minor: 3, patch: 0 },
+            },
+        }
+    }
+}
+
+impl Default for Wsl2Enforcer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EnforcementEngine for Wsl2Enforcer {
+    fn engine_id(&self) -> &'static str {
+        WSL2_ENGINE_ID
+    }
+
+    fn capability_snapshot(&self) -> EngineCapabilitySnapshot {
+        EngineCapabilitySnapshot {
+            engine_name: WSL2_ENGINE_ID.into(),
+            engine_version: None,
+            platform: "windows".into(),
+            filesystem: FilesystemCapabilitySnapshot {
+                enforcement: CapabilitySupport::Supported,
+                observation: CapabilitySupport::Limited,
+                temporary_file_coverage: CapabilitySupport::Supported,
+                atomic_rename_coverage: CapabilitySupport::Supported,
+            },
+            network: NetworkCapabilitySnapshot {
+                enforcement: CapabilitySupport::Supported,
+                observation: CapabilitySupport::Limited,
+                proxy_awareness: CapabilitySupport::Unsupported,
+            },
+            process: ProcessCapabilitySnapshot {
                 enforcement: CapabilitySupport::Supported,
                 observation: CapabilitySupport::Limited,
                 termination: CapabilitySupport::Supported,

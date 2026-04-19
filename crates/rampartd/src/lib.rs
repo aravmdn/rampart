@@ -219,6 +219,23 @@ pub fn run_preflight(
         }
     }
 
+    // WSL2 stronger isolation mode availability (Windows only)
+    if cfg!(target_os = "windows") {
+        if detect_wsl2() {
+            diagnostics.push(PreflightDiagnostic {
+                severity: PreflightSeverity::Pass,
+                label: "WSL2 isolation available".into(),
+                detail: "WSL2 detected. Select \u{201c}WSL2\u{201d} isolation mode to run the agent inside a Linux VM with Landlock + seccomp enforcement instead of Windows-native controls.".into(),
+            });
+        } else {
+            diagnostics.push(PreflightDiagnostic {
+                severity: PreflightSeverity::Warning,
+                label: "WSL2 not detected".into(),
+                detail: "WSL2 is not installed or has no distributions. Stronger isolation mode is unavailable; Windows-native enforcement (Job Objects + WFP) will be used.".into(),
+            });
+        }
+    }
+
     // Policy/capability compatibility
     if let Err(errors) = validate_policy_against_capabilities(&profile.policy, capabilities) {
         for item in &errors.items {
@@ -235,6 +252,22 @@ pub fn run_preflight(
         .any(|d| matches!(d.severity, PreflightSeverity::Fail));
 
     PreflightReport { ready, diagnostics }
+}
+
+/// Returns true when WSL2 is available on this Windows host.
+/// Runs `wsl --list --quiet`; exit-0 means at least one distribution is installed.
+/// Always false on non-Windows.
+fn detect_wsl2() -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+    std::process::Command::new("wsl")
+        .args(["--list", "--quiet"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 fn which_exists(command: &str) -> bool {
@@ -416,6 +449,8 @@ pub struct LaunchSessionRequest {
     pub project_dir: String,
     pub agent_tool: AgentTool,
     pub profile_id: String,
+    #[serde(default)]
+    pub isolation_mode: policy_core::IsolationMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -584,6 +619,7 @@ where
             status: SessionStatus::Running,
             started_at_ms,
             ended_at_ms: None,
+            isolation_mode: request.isolation_mode,
         };
         let process_result = self.runner.spawn_session(&session);
         let (persisted_session, launch_audit) = match process_result {
@@ -725,11 +761,22 @@ impl Default for LocalProcessRunner {
 impl LocalProcessRunner {
     fn spawn_session(&mut self, session: &Session) -> Result<ManagedProcess, ProcessRunnerError> {
         let adapter = AgentAdapter::for_tool(&session.agent_tool);
-        let mut cmd = Command::new(&adapter.command);
-        cmd.current_dir(&session.project_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        let wsl2 = matches!(session.isolation_mode, policy_core::IsolationMode::Wsl2);
+
+        let mut cmd = if wsl2 {
+            // Run the agent inside WSL2: `wsl --cd <linux_path> -- <command> [args]`
+            let mut c = Command::new("wsl");
+            c.arg("--cd")
+                .arg(win_path_to_wsl(&session.project_path))
+                .arg("--")
+                .arg(&adapter.command);
+            c
+        } else {
+            let mut c = Command::new(&adapter.command);
+            c.current_dir(&session.project_path);
+            c
+        };
+        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         for arg in &adapter.default_args {
             cmd.arg(arg);
         }
@@ -737,14 +784,17 @@ impl LocalProcessRunner {
             cmd.env(key, value);
         }
 
-        // Patch the project root to Low mandatory label so the Low-integrity
-        // agent process can write to its working directory.
+        // Windows-native enforcement (Job Objects + Low Integrity + WFP + SACL).
+        // Skipped in WSL2 mode: the agent runs inside a Linux VM where the host
+        // Win32 security primitives do not apply.
         #[cfg(target_os = "windows")]
-        if let Err(error) = patch_project_low_integrity_label(Path::new(&session.project_path)) {
-            eprintln!(
-                "rampartd: SACL patch failed for '{}': {error}",
-                session.project_path
-            );
+        if !wsl2 {
+            if let Err(error) = patch_project_low_integrity_label(Path::new(&session.project_path)) {
+                eprintln!(
+                    "rampartd: SACL patch failed for '{}': {error}",
+                    session.project_path
+                );
+            }
         }
 
         let child = cmd.spawn().map_err(|source| ProcessRunnerError::Spawn {
@@ -754,41 +804,36 @@ impl LocalProcessRunner {
         let pid = child.id();
 
         #[cfg(target_os = "windows")]
-        match WindowsJob::assign(pid) {
-            Ok(job) => {
-                self.jobs.insert(session.id.clone(), job);
+        if !wsl2 {
+            match WindowsJob::assign(pid) {
+                Ok(job) => {
+                    self.jobs.insert(session.id.clone(), job);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
+                        session.id
+                    );
+                }
             }
-            Err(error) => {
+
+            if let Err(error) = set_process_low_integrity(pid) {
                 eprintln!(
-                    "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
+                    "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
                     session.id
                 );
             }
-        }
 
-        // Reduce the agent process to Low Integrity so the OS denies writes to
-        // Medium-or-higher integrity paths (user profile, system dirs, etc.).
-        // Best-effort: session continues if this fails (e.g. restricted account).
-        #[cfg(target_os = "windows")]
-        if let Err(error) = set_process_low_integrity(pid) {
-            eprintln!(
-                "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
-                session.id
-            );
-        }
-
-        // Open a WFP dynamic session and install per-app-ID outbound BLOCK filters.
-        // Best-effort: session continues without network enforcement on failure.
-        #[cfg(target_os = "windows")]
-        match WfpNetworkGuard::open(pid, &adapter.command) {
-            Ok(guard) => {
-                self.wfp_guards.insert(session.id.clone(), guard);
-            }
-            Err(error) => {
-                eprintln!(
-                    "rampartd: WFP filter failed for session '{}' (pid {pid}): {error}",
-                    session.id
-                );
+            match WfpNetworkGuard::open(pid, &adapter.command) {
+                Ok(guard) => {
+                    self.wfp_guards.insert(session.id.clone(), guard);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "rampartd: WFP filter failed for session '{}' (pid {pid}): {error}",
+                        session.id
+                    );
+                }
             }
         }
 
@@ -1266,6 +1311,22 @@ fn slugify(value: &str) -> String {
             }
         })
         .collect()
+}
+
+/// Convert a Windows absolute path to its WSL2 mount path.
+/// `C:\foo\bar` → `/mnt/c/foo/bar`. Falls back to forward-slash substitution.
+fn win_path_to_wsl(path: &str) -> String {
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() >= 3
+        && chars[0].is_ascii_alphabetic()
+        && chars[1] == ':'
+        && (chars[2] == '\\' || chars[2] == '/')
+    {
+        let drive = chars[0].to_ascii_lowercase();
+        let rest: String = path[3..].chars().map(|c| if c == '\\' { '/' } else { c }).collect();
+        return format!("/mnt/{drive}/{rest}");
+    }
+    path.replace('\\', "/")
 }
 
 fn now_ms() -> u64 {

@@ -123,10 +123,13 @@ export type ViolationEvent = {
   explanation: ViolationExplanation | null;
 };
 
+export type IsolationMode = "windows-native" | "wsl2";
+
 export type LaunchSessionRequest = {
   projectPath: string;
   agentId: string;
   profileId: string;
+  isolationMode?: IsolationMode;
 };
 
 export type SelectedLaunchConfig = {
