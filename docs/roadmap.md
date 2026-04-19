@@ -34,14 +34,18 @@ Reference-driven priorities inside this phase:
 - Define a stable event taxonomy for launch, allow, block, alert, stop, and policy-change records.
 - Treat resume and history as first-class local data, not transient UI state.
 
-## Phase 3 — Windows enforcement engine (MVP gate)
+## Phase 3 — Windows enforcement engine (enforcement code complete)
 
-This is the gate phase. MVP is not done until real OS-level blocking is in place.
+This is the gate phase. MVP is not done until real OS-level blocking is verified at runtime.
 
-- Process containment: the agent and its children cannot escape the scoped execution boundary
-- Network enforcement: outbound connections are allowed or blocked per profile policy
-- Filesystem write scoping: write access is bounded to the project directory
-- Audit trail wired into the existing event taxonomy
+Enforcement code is fully shipped. Remaining: end-to-end runtime test on Windows with admin rights.
+
+- ✓ Process containment: Job Objects with `KILL_ON_JOB_CLOSE` contain the agent process tree
+- ✓ Network enforcement: WFP per-app-ID outbound BLOCK filters on IPv4 + IPv6, auto-cleanup on session end
+- ✓ Filesystem write scoping: Low Integrity token + project root SACL patch
+- ✓ Audit trail: ETW provider emitting all session and audit events
+- ✓ WSL2 isolation mode: stronger enforcement via Linux VM for users with WSL2 installed
+- ◻ Runtime end-to-end validation (requires Windows + admin rights)
 
 Reference-driven priorities inside this phase:
 

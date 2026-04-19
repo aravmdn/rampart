@@ -98,17 +98,21 @@ Phases 1 and 2 are complete. Do not rewrite or re-add:
 - Profile editor view in `App.tsx` with "Edit selected profile" entry from launcher
 - Policy refinement flow: "Adjust policy" on violations → editor pre-populated with targeted suggestion
 
-Phase 3 (Windows enforcement engine, MVP gate) — in progress:
-- `WindowsJob` in engine-windows: Job Object process tree containment, wired in `LocalProcessRunner`
-- `set_process_low_integrity()` in engine-windows: post-spawn token integrity reduction to Low (S-1-16-4096); restricts agent writes to Medium+ integrity paths (user profile, system dirs); best-effort
-- `WfpNetworkGuard` in engine-windows: full per-app-ID outbound BLOCK filter; SearchPathW resolves command → full path; QueryDosDeviceW converts to NT device path; FWPM_CONDITION_ALE_APP_ID on ALE connect V4+V6; dynamic WFP session auto-removes filters on Drop
-- `patch_project_low_integrity_label()` in engine-windows: sets Low mandatory label on project root SACL via SetNamedSecurityInfoW + AddMandatoryAce; called in spawn_session before launch; resolves the project-root write gap
-- `EtwAuditProvider` in engine-windows: registers Rampart ETW provider (GUID 7E5A6B4C-...); EventWriteString on every AuditEvent; wired into RampartDaemon for ingest_raw_event, launch_session, stop_session
-- `threat-model.md`: honest accidental-overreach framing, current gaps, WSL2/AppContainer seam
+Phase 3 (Windows enforcement engine) — enforcement code complete:
+- `WindowsJob`: Job Object process tree containment, wired in `LocalProcessRunner`
+- `set_process_low_integrity()`: post-spawn token → Low Integrity (S-1-16-4096)
+- `patch_project_low_integrity_label()`: Low SACL on project root so agent can write there
+- `WfpNetworkGuard`: per-app-ID outbound BLOCK on ALE V4+V6; dynamic session auto-cleans on Drop
+- `EtwAuditProvider`: ETW provider GUID 7E5A6B4C-...; EventWriteString on every AuditEvent
+- `IsolationMode` enum in policy-core (WindowsNative / Wsl2); field on Session and LaunchSessionRequest
+- `Wsl2Enforcer` in engine-windows: Supported capabilities; used when isolation_mode = Wsl2
+- `detect_wsl2()` + WSL2 preflight diagnostic in rampartd
+- `win_path_to_wsl()`: C:\... → /mnt/c/... for WSL working directory
+- WSL2 launch path in LocalProcessRunner: `wsl --cd <linux_path> -- <cmd>`; Win32 hooks skipped
+- `threat-model.md`: honest accidental-overreach framing, gaps, WSL2/AppContainer seam
 
 Remaining for Phase 3 MVP gate:
 - End-to-end violation flow tested at runtime (requires Windows + admin rights)
-- WSL2 stronger isolation mode (fast-follow)
 - AppContainer left as a clean seam for Phase 5
 
 ## End-of-session checklist
@@ -119,38 +123,53 @@ At the end of each work session, check whether any of the following need updates
 - `CLAUDE.md` — what-is-done list, current focus
 - `docs/architecture.md`, `docs/roadmap.md` — if architecture or roadmap shifted
 
-## Knowledge base — vault + graph (primary context source)
+## Knowledge base — vault + graph (second brain)
 
-**Always use the vault and graph instead of reading raw project files.** Only open a raw file when the vault note says something is incomplete or when editing code directly.
+The vault (`rampart/`) is my second brain for this project. I own it. I read it, write to it, restructure it, add notes, add cross-links, and keep it current. It is not a static reference — it is an active working context that I build up over time so each session starts with full context without re-deriving it from raw files.
 
-### Protocol
+**Rule: the vault is always the first read and the last write in every session.**
 
-**Every session, before doing anything:**
-1. Read the relevant vault note(s) from `rampart/` — they contain pre-digested context; do not re-derive it from raw files
-2. If the question is code-structural (what calls what, where is X defined), query the graph first: `"/c/Users/20243223/AppData/Roaming/Python/Python311/Scripts/graphify.exe" query "question"`
+### Session protocol
 
-**Every session, after doing anything that changes state:**
-- Update the relevant vault note(s) immediately — phase status changed, new code added, decision made, blocker resolved, architecture shifted
-- After any code edits: `"/c/Users/20243223/AppData/Roaming/Python/Python311/Scripts/graphify.exe" update .`
-- Vault notes are write targets as much as read targets; a stale note is worse than no note
+**Start of every session:**
+1. Read `08 - Next Session.md` — this is the single cold-start note; it tells me exactly where we left off and what to do next
+2. Read `02 - Phase Status.md` if working on features
+3. Run `"/c/Users/20243223/AppData/Roaming/Python/Python311/Scripts/graphify.exe" update .` to refresh the AST graph
+4. For code-structural questions (what calls what, where is X defined), query: `graphify.exe query "question"`
+
+**End of every session:**
+- Update every vault note touched by what changed — not just `02`
+- Update `08 - Next Session.md` to reflect the new state so the next session starts instantly
+- After code edits: `graphify.exe update .`
+- A stale vault note is worse than no note
+
+### Vault ownership rules
+
+- Add new notes whenever a topic grows too large or distinct to stay in an existing note
+- Add cross-links between notes when one note references something explained in another
+- Restructure notes whenever the current structure makes context harder to find
+- `07 - Gotchas and Decisions.md` is where I record non-obvious bugs, IPC quirks, and why specific decisions were made — update it whenever something surprising comes up
+- `08 - Next Session.md` is always the single most up-to-date summary of where we are and what's next
 
 ### Vault index — `rampart/`
 
-| Note | When to read | When to update |
-|------|-------------|----------------|
-| `00 - Rampart Overview.md` | any product/scope question | MVP bar or product thesis changes |
-| `01 - Architecture.md` | any architecture/module question | new module, boundary change, IPC change |
-| `02 - Phase Status.md` | start of every session | phase completes, focus shifts, feature lands |
-| `03 - Windows Enforcement Strategy.md` | Phase 3 work, enforcement decisions | strategy decision, ruling in/out a primitive |
-| `04 - MVP Session Plan.md` | start of every session | session completes, blocker resolved/added |
-| `05 - Working Rules for Claude.md` | env or tooling questions | env constraint changes, new rule established |
-| `06 - What Is Done (Do Not Re-Implement).md` | before adding any feature | new feature ships in Phase 3+ |
+| Note | Purpose | Update when |
+|------|---------|-------------|
+| `00 - Rampart Overview.md` | product thesis, MVP bar | MVP bar or product thesis changes |
+| `01 - Architecture.md` | layers, modules, IPC boundary | new module, boundary change, IPC change |
+| `02 - Phase Status.md` | done/current/future phases | phase completes, focus shifts, feature lands |
+| `03 - Windows Enforcement Strategy.md` | enforcement decisions, primitives, threat model | strategy decision, primitive ruled in/out |
+| `04 - MVP Session Plan.md` | session log, blockers | session completes, blocker changes |
+| `05 - Working Rules for Claude.md` | env constraints, style rules, git rules | env changes, new rule established |
+| `06 - What Is Done (Do Not Re-Implement).md` | itemized shipped features | any feature ships |
+| `07 - Gotchas and Decisions.md` | IPC quirks, known bugs, decision rationale | anything surprising discovered |
+| `08 - Next Session.md` | cold-start summary, next tasks, open questions | end of every session |
 
 ### Graphify graph — `graphify-out/`
 
-AST graph: 11,525 nodes, 39,325 edges. Community 18 = Rampart-specific code; Communities 0–17 = reference/claude-code-private corpus (ignore for Rampart questions).
+Community 18 = Rampart-specific code. Communities 0–17 = reference corpus (ignore for Rampart questions).
 
-- Code-structure queries: `graphify.exe query "question"` (BFS, 2000-token budget)
-- Concept path: `graphify.exe path "NodeA" "NodeB"`
-- After code edits: `graphify.exe update .` (free, AST-only)
-- Graph report: `graphify-out/GRAPH_REPORT.md` — read for god nodes before grepping raw files
+- Code queries: `graphify.exe query "question"` (BFS, 2000-token budget)
+- Path queries: `graphify.exe path "NodeA" "NodeB"`
+- Refresh after edits: `graphify.exe update .`
+- God nodes and community map: `graphify-out/GRAPH_REPORT.md`

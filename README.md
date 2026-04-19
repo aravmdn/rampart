@@ -135,14 +135,16 @@ Phase 1 and early Phase 2 priorities are now complete:
 - Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
 - Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) is in progress:
+Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) enforcement code is fully shipped:
 
-- **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` are live. The agent and all child processes are contained in a job; the OS terminates the tree when the session ends or Rampart exits.
-- **Filesystem write restriction**: agent processes are launched at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile directories, system directories — without any custom hooks. Reads are unrestricted.
-- **Network enforcement**: a WFP engine session is opened per agent process. Per-application-ID outbound blocking is the next step; the session open/close lifecycle is already wired.
+- **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` contain the agent and all child processes. The OS terminates the tree when the session ends or Rampart exits.
+- **Filesystem write restriction**: agent processes run at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile, system directories — without custom hooks. The project root is patched to a Low mandatory label so the agent can write to its own working directory.
+- **Network enforcement**: per-application-ID WFP outbound blocking is live on both IPv4 and IPv6 ALE connect layers. Filters are installed at session start and auto-removed when the session ends.
+- **Audit trail**: a Rampart ETW provider emits every session lifecycle and audit event, capturable with standard Windows tracing tools.
+- **WSL2 isolation mode**: users with WSL2 installed can launch agents inside a Linux VM for Linux-native enforcement. Surfaced as a stronger isolation option at preflight when WSL2 is detected.
 - **Honest threat model**: enforcement targets accidental overreach by well-behaved agents, not adversarial processes issuing direct syscalls. This is the real AI coding-agent threat.
 
-Remaining before MVP is complete: project root SACL patching (so the low-integrity agent can write to its own project directory), WFP per-app filter add, ETW audit trail, and end-to-end violation flow tested.
+Remaining before the MVP loop is fully verified: end-to-end violation flow tested at runtime (requires Windows and admin rights). The code is in place; runtime validation is the last step.
 
 MVP is defined as: a user can pick an agent, project, and profile; launch through Rampart; have a real OS-level block occur when the agent attempts a disallowed action; and see that violation explained in the UI. Everything before Phase 3 is the shell. Phase 3 is the product.
 
@@ -193,7 +195,8 @@ rampart/
 |- crates/
 |  |- rampartd/
 |  |- policy-core/
-|  `- engine-greywall/
+|  |- engine-greywall/
+|  `- engine-windows/
 |- packages/
 |  `- shared-ui/
 `- docs/

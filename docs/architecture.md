@@ -68,7 +68,7 @@ Supporting architecture should therefore include:
 - The repo should not assume one engine is the permanent runtime
 - Public docs should surface limitations instead of implying unsupported protection
 
-## Windows enforcement engine (Phase 3 — in progress)
+## Windows enforcement engine (Phase 3 — enforcement code complete)
 
 MVP requires real OS-level enforcement. The engine adapter for Windows owns:
 
@@ -83,11 +83,15 @@ The engine adapter boundary keeps enforcement implementation details out of the 
 
 **Process containment** — complete. `WindowsJob` creates a Job Object with `KILL_ON_JOB_CLOSE` and assigns the agent process at spawn. The OS kills the entire process tree when the job handle is dropped (session end or Rampart exit). Implemented in `engine-windows`, wired in `LocalProcessRunner`.
 
-**Filesystem write restriction** — partial. `set_process_low_integrity()` sets the agent's process token to Low Integrity (S-1-16-4096) post-spawn via `SetTokenInformation(TokenIntegrityLevel)`. The OS denies writes to all Medium-or-higher integrity paths without custom hooks. Known gap: the project root directory has Medium integrity by default; the agent cannot write there until the project root's mandatory SACL label is explicitly set to Low. SACL patching is the next step.
+**Filesystem write restriction** — complete. `set_process_low_integrity()` sets the agent's process token to Low Integrity (S-1-16-4096) post-spawn. The OS denies writes to all Medium-or-higher integrity paths without custom hooks. `patch_project_low_integrity_label()` sets a Low mandatory SACL label on the project root so the agent can write to its own working directory while remaining blocked everywhere else.
 
-**Network enforcement** — skeleton. `WfpNetworkGuard` opens a WFP engine session per agent process. Per-application-ID outbound blocking requires resolving the NT device path from the Win32 executable path; that step is the immediate follow-on. The guard open/close lifecycle is fully wired.
+**Network enforcement** — complete. `WfpNetworkGuard` opens a dynamic WFP engine session and installs per-application-ID outbound BLOCK filters on both IPv4 and IPv6 ALE connect layers. The NT device path is resolved from the Win32 executable path via `QueryDosDeviceW`. Filters auto-remove when the session handle is dropped.
 
-**Audit trail** — pending. ETW subscription and mapping into `AuditEventKind` is deferred until enforcement primitives are complete.
+**Audit trail** — complete. `EtwAuditProvider` registers a Rampart ETW provider and emits every session lifecycle and audit event via `EventWriteString`. Capturable with standard Windows tracing tools. Wired into `RampartDaemon` for launch, stop, and all ingested events.
+
+**WSL2 isolation mode** — complete. Users with WSL2 installed can select a stronger isolation mode that runs the agent inside a Linux VM. `detect_wsl2()` probes at preflight. `Wsl2Enforcer` reports `Supported` capabilities. `LocalProcessRunner` wraps the command as `wsl --cd <linux_path> -- <command>` and skips Win32 enforcement hooks that have no effect inside the VM.
+
+**Runtime validation** — pending. End-to-end violation flow must be tested at runtime with Windows and admin rights. This is the only remaining step before Phase 3 is fully complete.
 
 ## Phase 1 and early Phase 2 implementation status
 

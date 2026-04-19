@@ -63,8 +63,9 @@
 - Phase 0: repo scaffolding, architecture docs, threat model, capability boundaries, product language.
 - Phase 1: local desktop shell, project picker, agent/profile picker, launch sandboxed session, event stream UI.
 - Phase 2: profile editing, reusable presets, local session history, violation explanations, safe policy refinement.
-- Phase 3: team features behind clear boundaries: shared policies, signed profile distribution, centralized audit sync, org settings.
-- Phase 4: CI and headless modes, broader engine support, enterprise controls where justified.
+- Phase 3: Windows enforcement engine — Job Objects, Low Integrity token, WFP network guard, ETW audit, WSL2 isolation mode. MVP gate.
+- Phase 4: team features: shared policies, signed profile distribution, centralized audit sync, org settings.
+- Phase 5: CI and headless modes, AppContainer isolation, broader engine support, enterprise controls where justified.
 
 Reference-informed next steps inside those phases:
 - Early Phase 1 (complete):
@@ -81,14 +82,14 @@ Reference-informed next steps inside those phases:
 - Phase 2 (complete):
   - profile editing UI implemented: ProfileEditorPanel renders policy in product language; accessible from the launcher via "Edit selected profile"
   - safe policy refinement flow implemented: each violation in the session console carries an "Adjust policy" button that derives a rule suggestion and opens the profile editor pre-populated with it
-- Current focus (Phase 3 — Windows enforcement engine, MVP gate):
-  - Done: Windows Job Objects for process tree containment (`WindowsJob` in engine-windows, wired in `LocalProcessRunner`)
-  - Done: Low-integrity token applied post-spawn (`set_process_low_integrity` in engine-windows); restricts agent writes to Medium+ integrity paths
-  - Done: WFP engine session open/close skeleton (`WfpNetworkGuard`); per-app-ID filter add is next
-  - Done: `threat-model.md` — honest accidental-overreach framing, current gaps, WSL2/AppContainer seam
-  - Remaining: project root SACL patching, WFP per-app filter add, ETW audit trail, end-to-end violation flow
-  - WSL2 stronger isolation mode as a fast-follow
-- Phase 4 (after enforcement):
+- Phase 3 (complete — enforcement code shipped, runtime validation pending):
+  - Done: Windows Job Objects (`WindowsJob`), Low Integrity token (`set_process_low_integrity`), project root SACL patch (`patch_project_low_integrity_label`)
+  - Done: WFP per-app-ID outbound filter (`WfpNetworkGuard`) on IPv4 + IPv6 ALE connect layers, dynamic session auto-cleanup
+  - Done: ETW audit provider (`EtwAuditProvider`) wired into daemon for all session lifecycle and audit events
+  - Done: WSL2 isolation mode — `IsolationMode` enum, `detect_wsl2()` preflight, `Wsl2Enforcer`, WSL2 launch path via `wsl --cd`
+  - Done: `threat-model.md` — honest accidental-overreach framing, gaps, WSL2/AppContainer seam
+  - Remaining: end-to-end violation flow tested at runtime (requires Windows + admin rights)
+- Phase 4 (next):
   - shared policies, signed profile distribution, centralized audit sync, org settings
 - Phase 5 (later):
   - headless launch paths, AppContainer isolation mode, broader engine support, enterprise controls
