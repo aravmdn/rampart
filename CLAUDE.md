@@ -58,7 +58,10 @@ specific to working with Claude Code in this repo.
 - This repo uses worktrees for Claude Code sessions. The current worktree branch is
   `claude/quirky-raman`. Changes are pushed to `main` via fast-forward after each
   completed task body.
-- Commit after every finished task. Push immediately unless asked otherwise.
+- A `PreToolUse` hook in `.claude/settings.json` automatically runs `git pull --ff-only`
+  before every `Edit`/`Write`/`NotebookEdit` call to stay in sync with GitHub.
+- Commit after every finished task. Push immediately after committing — do not leave
+  committed changes unpushed.
 - Commit messages: short imperative subject, body explaining why not what, Co-Authored-By
   trailer for Claude.
 - Do not commit `node_modules`, `.rampart/` local state, or any file matching `.gitignore`.
