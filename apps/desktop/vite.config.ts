@@ -26,7 +26,7 @@ export default defineConfig({
         }
       : undefined,
     fs: {
-      allow: [resolve(rootDir, "../../packages/shared-ui")],
+      allow: [rootDir, resolve(rootDir, "../../packages/shared-ui")],
     },
     watch: {
       ignored: ["**/src-tauri/**"],
