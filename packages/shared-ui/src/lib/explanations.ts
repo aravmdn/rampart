@@ -1,8 +1,8 @@
 type ExplainableViolation = {
   operation: string;
   target: string;
-  ruleId: string;
-  message: string;
+  ruleId?: string;
+  message?: string;
 };
 
 export function explainViolation(event: ExplainableViolation): string {

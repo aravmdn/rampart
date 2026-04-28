@@ -70,7 +70,7 @@ function formatDuration(startMs: number, endMs: number | null): string {
 
 function toHistorySessionView(
   entry: SessionHistoryEntry,
-  explainViolationFn: (v: { operation: string; target: string; ruleId?: string; ruleLabel?: string; platformNote?: string | null }) => string,
+  explainViolationFn: (v: { operation: string; target: string; ruleId?: string; ruleLabel?: string; platformNote?: string | null; message?: string }) => string,
 ): HistorySessionView {
   return {
     id: entry.session.id ?? "unknown",

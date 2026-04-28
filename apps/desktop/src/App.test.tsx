@@ -78,6 +78,8 @@ describe("desktop shell", () => {
           },
         ],
       }),
+      loadProfile: vi.fn().mockResolvedValue(null),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
       listSessionHistory: vi.fn().mockResolvedValue([
         {
           session: {
@@ -160,6 +162,8 @@ describe("desktop shell", () => {
       launchSession: vi.fn().mockResolvedValue({ id: "s1", status: "active", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
       stopSession: vi.fn().mockResolvedValue({ id: "s1", status: "stopped", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
       streamSessionEvents: vi.fn().mockResolvedValue({ audit: [], violations: [] }),
+      loadProfile: vi.fn().mockResolvedValue(null),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
       listSessionHistory: vi.fn().mockResolvedValue([
         {
           session: {
