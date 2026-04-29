@@ -246,11 +246,11 @@ pub fn set_process_low_integrity(pid: u32) -> Result<(), LowIntegrityError> {
     use windows_sys::Win32::{
         Foundation::CloseHandle,
         Security::{
-            AllocateAndInitializeSid, FreeSid, GetLengthSid, OpenProcessToken,
+            AllocateAndInitializeSid, FreeSid, GetLengthSid,
             SetTokenInformation, SID_AND_ATTRIBUTES, SID_IDENTIFIER_AUTHORITY,
             TOKEN_ADJUST_DEFAULT, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TokenIntegrityLevel,
         },
-        System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION},
+        System::Threading::{OpenProcess, OpenProcessToken, PROCESS_QUERY_INFORMATION},
     };
 
     const MANDATORY_LABEL_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
@@ -356,11 +356,15 @@ pub fn patch_project_low_integrity_label(path: &std::path::Path) -> Result<(), S
     use core::mem::size_of;
     use windows_sys::Win32::Security::{
         ACL, AllocateAndInitializeSid, FreeSid, GetLengthSid, InitializeAcl,
-        SID_IDENTIFIER_AUTHORITY, SYSTEM_MANDATORY_LABEL_NO_WRITE_UP,
+        SID_IDENTIFIER_AUTHORITY,
     };
     use windows_sys::Win32::Security::Authorization::{
-        LABEL_SECURITY_INFORMATION, SE_FILE_OBJECT, SetNamedSecurityInfoW,
+        SE_FILE_OBJECT, SetNamedSecurityInfoW,
     };
+    // SYSTEM_MANDATORY_LABEL_NO_WRITE_UP and LABEL_SECURITY_INFORMATION are not
+    // exported as named constants in windows-sys 0.52; use their raw values.
+    const SYSTEM_MANDATORY_LABEL_NO_WRITE_UP: u32 = 0x00000001;
+    const LABEL_SECURITY_INFORMATION: u32 = 0x00000010;
 
     // AddMandatoryAce is defined in Win32::Security but needs explicit import.
     use windows_sys::Win32::Security::AddMandatoryAce;
@@ -590,14 +594,14 @@ impl WfpNetworkGuard {
 
             filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
             let mut id = 0u64;
-            let err = FwpmFilterAdd0(engine, &filter, core::ptr::null(), &mut id);
+            let err = FwpmFilterAdd0(engine, &filter, core::ptr::null_mut(), &mut id);
             if err != 0 {
                 FwpmEngineClose0(engine);
                 return Err(WfpError::FilterAddFailed(err));
             }
 
             filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
-            let err = FwpmFilterAdd0(engine, &filter, core::ptr::null(), &mut id);
+            let err = FwpmFilterAdd0(engine, &filter, core::ptr::null_mut(), &mut id);
             if err != 0 {
                 // IPv4 filter is session-scoped; closing engine removes it.
                 FwpmEngineClose0(engine);

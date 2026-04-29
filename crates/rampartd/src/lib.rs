@@ -675,17 +675,25 @@ where
     }
 
     fn stop_session(&mut self, session_id: &str) -> Result<Session, DaemonError> {
+        {
+            let session = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or_else(|| DaemonError::UnknownSession(session_id.into()))?;
+            if matches!(session.status, SessionStatus::Running) {
+                self.runner.stop_session(session_id)?;
+                self.active_processes.remove(session_id);
+            }
+            session.status = SessionStatus::Terminated;
+            let ended_at_ms = now_ms().max(session.started_at_ms);
+            session.ended_at_ms = Some(ended_at_ms);
+        }
+
         let session = self
             .sessions
-            .get_mut(session_id)
+            .get(session_id)
             .ok_or_else(|| DaemonError::UnknownSession(session_id.into()))?;
-        if matches!(session.status, SessionStatus::Running) {
-            self.runner.stop_session(session_id)?;
-            self.active_processes.remove(session_id);
-        }
-        session.status = SessionStatus::Terminated;
-        let ended_at_ms = now_ms().max(session.started_at_ms);
-        session.ended_at_ms = Some(ended_at_ms);
+        let ended_at_ms = session.ended_at_ms.unwrap_or_else(now_ms);
 
         let next_sequence = self
             .events
@@ -703,13 +711,14 @@ where
             message: "Session stopped by daemon.".into(),
             violation: None,
         };
+        let result = session.clone();
         self.emit_audit_etw(&end_event);
         self.events
             .entry(session_id.into())
             .or_default()
             .push_back(SessionEventRecord::Audit(end_event));
 
-        Ok(session.clone())
+        Ok(result)
     }
 
     fn stream_session_events(&self, session_id: &str) -> Result<Vec<SessionEventRecord>, DaemonError> {

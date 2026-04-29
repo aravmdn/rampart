@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "dev.rampart.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev:web -- --host 127.0.0.1 --port 1420",
+    "beforeDevCommand": "pnpm dev:web -- --port 1420",
     "beforeBuildCommand": "pnpm build:web",
-    "devUrl": "http://127.0.0.1:1420",
+    "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
   "app": {
