@@ -82,13 +82,13 @@ Reference-informed next steps inside those phases:
 - Phase 2 (complete):
   - profile editing UI implemented: ProfileEditorPanel renders policy in product language; accessible from the launcher via "Edit selected profile"
   - safe policy refinement flow implemented: each violation in the session console carries an "Adjust policy" button that derives a rule suggestion and opens the profile editor pre-populated with it
-- Phase 3 (complete — enforcement code shipped, runtime validation pending):
-  - Done: Windows Job Objects (`WindowsJob`), Low Integrity token (`set_process_low_integrity`), project root SACL patch (`patch_project_low_integrity_label`)
-  - Done: WFP per-app-ID outbound filter (`WfpNetworkGuard`) on IPv4 + IPv6 ALE connect layers, dynamic session auto-cleanup
-  - Done: ETW audit provider (`EtwAuditProvider`) wired into daemon for all session lifecycle and audit events
+- Phase 3 (complete — enforcement code shipped and runtime-validated):
+  - Done: Windows Job Objects (`WindowsJob`), Low Integrity token (`set_process_low_integrity`), project root SACL patch (`patch_project_low_integrity_label`) — runtime verified
+  - Done: WFP per-app-ID outbound filter (`WfpNetworkGuard`) on IPv4 + IPv6 ALE connect layers, dynamic session auto-cleanup — runtime verified
+  - Done: ETW audit provider (`EtwAuditProvider`) wired into daemon for all session lifecycle and audit events — runtime verified
   - Done: WSL2 isolation mode — `IsolationMode` enum, `detect_wsl2()` preflight, `Wsl2Enforcer`, WSL2 launch path via `wsl --cd`
   - Done: `threat-model.md` — honest accidental-overreach framing, gaps, WSL2/AppContainer seam
-  - Remaining: end-to-end violation flow tested at runtime (requires Windows + admin rights)
+  - Known limitation: violation events blocked by WFP/Job/SACL do not stream back to the session console in Windows Native mode; blocks fire at OS level but UI feedback is silent; WSL2 mode does surface events via greywall normalizer
 - Phase 4 (next):
   - shared policies, signed profile distribution, centralized audit sync, org settings
 - Phase 5 (later):

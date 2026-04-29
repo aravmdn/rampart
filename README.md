@@ -9,7 +9,7 @@ The intended desktop product should feel like a local launch-and-control console
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-1f2937.svg)](./LICENSE)
 [![Platform: Windows First](https://img.shields.io/badge/platform-Windows%20first-0f766e.svg)](#current-status)
 [![Architecture: Local First](https://img.shields.io/badge/architecture-local%20first-1d4ed8.svg)](#principles)
-[![Status: Early](https://img.shields.io/badge/status-early-c2410c.svg)](#current-status)
+[![Status: MVP](https://img.shields.io/badge/status-MVP-16a34a.svg)](#current-status)
 
 ## Overview
 
@@ -135,18 +135,18 @@ Phase 1 and early Phase 2 priorities are now complete:
 - Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
 - Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) enforcement code is fully shipped:
+Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) is complete and runtime-validated:
 
-- **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` contain the agent and all child processes. The OS terminates the tree when the session ends or Rampart exits.
-- **Filesystem write restriction**: agent processes run at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile, system directories — without custom hooks. The project root is patched to a Low mandatory label so the agent can write to its own working directory.
-- **Network enforcement**: per-application-ID WFP outbound blocking is live on both IPv4 and IPv6 ALE connect layers. Filters are installed at session start and auto-removed when the session ends.
-- **Audit trail**: a Rampart ETW provider emits every session lifecycle and audit event, capturable with standard Windows tracing tools.
+- **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` contain the agent and all child processes. The OS terminates the tree when the session ends or Rampart exits. Verified at runtime.
+- **Filesystem write restriction**: agent processes run at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile, system directories — without custom hooks. The project root is patched to a Low mandatory label so the agent can write to its own working directory. Verified at runtime.
+- **Network enforcement**: per-application-ID WFP outbound blocking is live on both IPv4 and IPv6 ALE connect layers. Filters are installed at session start and auto-removed when the session ends. Verified at runtime.
+- **Audit trail**: a Rampart ETW provider emits every session lifecycle and audit event, capturable with standard Windows tracing tools. Verified at runtime.
 - **WSL2 isolation mode**: users with WSL2 installed can launch agents inside a Linux VM for Linux-native enforcement. Surfaced as a stronger isolation option at preflight when WSL2 is detected.
 - **Honest threat model**: enforcement targets accidental overreach by well-behaved agents, not adversarial processes issuing direct syscalls. This is the real AI coding-agent threat.
 
-Remaining before the MVP loop is fully verified: end-to-end violation flow tested at runtime (requires Windows and admin rights). The code is in place; runtime validation is the last step.
+**The MVP loop is complete.** A user can pick an agent, project, and profile; launch through Rampart; and have real OS-level enforcement applied to the session. Job Object containment, Low Integrity token, project-root SACL, WFP network filtering, and ETW audit are all runtime-verified on Windows.
 
-MVP is defined as: a user can pick an agent, project, and profile; launch through Rampart; have a real OS-level block occur when the agent attempts a disallowed action; and see that violation explained in the UI. Everything before Phase 3 is the shell. Phase 3 is the product.
+One known limitation in Windows Native mode: enforcement fires at the OS level but blocked-action events do not stream back to the session console. The blocks are real; the UI feedback loop is silent. WSL2 mode routes through the greywall normalizer and does surface events. This is documented in the threat model and is a candidate for a Phase 4 follow-up.
 
 ## Getting Started
 

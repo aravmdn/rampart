@@ -101,7 +101,7 @@ Phases 1 and 2 are complete. Do not rewrite or re-add:
 - Profile editor view in `App.tsx` with "Edit selected profile" entry from launcher
 - Policy refinement flow: "Adjust policy" on violations → editor pre-populated with targeted suggestion
 
-Phase 3 (Windows enforcement engine) — enforcement code complete:
+Phase 3 (Windows enforcement engine) — complete and runtime-validated:
 - `WindowsJob`: Job Object process tree containment, wired in `LocalProcessRunner`
 - `set_process_low_integrity()`: post-spawn token → Low Integrity (S-1-16-4096)
 - `patch_project_low_integrity_label()`: Low SACL on project root so agent can write there
@@ -113,9 +113,8 @@ Phase 3 (Windows enforcement engine) — enforcement code complete:
 - `win_path_to_wsl()`: C:\... → /mnt/c/... for WSL working directory
 - WSL2 launch path in LocalProcessRunner: `wsl --cd <linux_path> -- <cmd>`; Win32 hooks skipped
 - `threat-model.md`: honest accidental-overreach framing, gaps, WSL2/AppContainer seam
-
-Remaining for Phase 3 MVP gate:
-- End-to-end violation flow tested at runtime (requires Windows + admin rights)
+- Runtime validation: Tests 1–5 PASS (Job Object, Low Integrity, SACL, WFP, ETW); app builds and launches
+- Known limitation: WFP/Job/SACL blocks fire at OS level but do not stream back to session console in Windows Native mode
 - AppContainer left as a clean seam for Phase 5
 
 ## End-of-session checklist

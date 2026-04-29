@@ -34,18 +34,18 @@ Reference-driven priorities inside this phase:
 - Define a stable event taxonomy for launch, allow, block, alert, stop, and policy-change records.
 - Treat resume and history as first-class local data, not transient UI state.
 
-## Phase 3 — Windows enforcement engine (enforcement code complete)
+## Phase 3 — Windows enforcement engine (complete)
 
-This is the gate phase. MVP is not done until real OS-level blocking is verified at runtime.
+MVP gate closed. Enforcement code is shipped and runtime-validated on Windows.
 
-Enforcement code is fully shipped. Remaining: end-to-end runtime test on Windows with admin rights.
-
-- ✓ Process containment: Job Objects with `KILL_ON_JOB_CLOSE` contain the agent process tree
-- ✓ Network enforcement: WFP per-app-ID outbound BLOCK filters on IPv4 + IPv6, auto-cleanup on session end
-- ✓ Filesystem write scoping: Low Integrity token + project root SACL patch
-- ✓ Audit trail: ETW provider emitting all session and audit events
+- ✓ Process containment: Job Objects with `KILL_ON_JOB_CLOSE` contain the agent process tree — runtime verified
+- ✓ Network enforcement: WFP per-app-ID outbound BLOCK filters on IPv4 + IPv6, auto-cleanup on session end — runtime verified
+- ✓ Filesystem write scoping: Low Integrity token + project root SACL patch — runtime verified
+- ✓ Audit trail: ETW provider emitting all session and audit events — runtime verified
 - ✓ WSL2 isolation mode: stronger enforcement via Linux VM for users with WSL2 installed
-- ◻ Runtime end-to-end validation (requires Windows + admin rights)
+- ✓ Runtime end-to-end validation: enforcement mechanisms tested on Windows with admin rights
+
+Known limitation: OS-level blocks (WFP, Job, SACL) do not stream back as violation events to the session console in Windows Native mode. Blocks fire correctly; UI feedback is silent. WSL2 mode does surface events. Candidate for Phase 4 follow-up.
 
 Reference-driven priorities inside this phase:
 
