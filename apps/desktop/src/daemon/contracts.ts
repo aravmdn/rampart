@@ -1,5 +1,7 @@
 export type DefaultAction = "allow" | "deny";
 
+export type SignatureStatus = "unsigned" | "valid" | "invalid";
+
 export type ProfileDetail = {
   id: string;
   displayName: string;
@@ -19,6 +21,7 @@ export type ProfileDetail = {
     allowedCommands: string[];
     blockedCommands: string[];
   };
+  signatureStatus: SignatureStatus;
 };
 
 export const TASK3_API_NAMES = {
@@ -71,6 +74,7 @@ export type ProfileSummary = {
   id: string;
   displayName: string;
   detail: string;
+  signatureStatus: SignatureStatus;
 };
 
 export type SessionStatus = "idle" | "launching" | "active" | "stopped" | "failed";
@@ -181,4 +185,5 @@ export type DaemonApi = {
   listSessionHistory: () => Promise<SessionHistoryEntry[]>;
   loadProfile: (profileId: string) => Promise<ProfileDetail>;
   saveProfile: (profile: ProfileDetail) => Promise<void>;
+  signProfile: (profileId: string, signingKeyB64: string) => Promise<void>;
 };

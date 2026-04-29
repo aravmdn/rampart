@@ -183,7 +183,12 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const profileItems: OptionItem[] = profiles.map((profile) => ({
     id: profile.id,
     title: profile.displayName,
-    description: profile.detail,
+    description:
+      profile.signatureStatus === "valid"
+        ? `[signed] ${profile.detail}`
+        : profile.signatureStatus === "invalid"
+          ? `[signature invalid] ${profile.detail}`
+          : profile.detail,
   }));
 
   const selectedAgent = agents.find((agent) => agent.id === agentId);

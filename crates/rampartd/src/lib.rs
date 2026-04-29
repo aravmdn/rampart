@@ -390,10 +390,17 @@ pub struct ProfileDetail {
     pub filesystem: ProfileFilesystem,
     pub network: ProfileNetwork,
     pub process: ProfileProcess,
+    /// Stored signature block; absent for unsigned profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<policy_core::ProfileSignature>,
+    /// Computed on every load; never persisted. Defaults to Unsigned.
+    #[serde(default)]
+    pub signature_status: policy_core::SignatureStatus,
 }
 
 impl ProfileDetail {
     fn from_profile(profile: &Profile) -> Self {
+        let signature_status = policy_core::verify_signature(profile);
         Self {
             id: profile.id.clone(),
             display_name: profile.name.clone(),
@@ -413,6 +420,8 @@ impl ProfileDetail {
                 allowed_commands: profile.policy.process.allowed_commands.clone(),
                 blocked_commands: profile.policy.process.blocked_commands.clone(),
             },
+            signature: profile.signature.clone(),
+            signature_status,
         }
     }
 
@@ -423,6 +432,7 @@ impl ProfileDetail {
             name: self.display_name,
             description: if self.detail.is_empty() { None } else { Some(self.detail) },
             extends: None,
+            signature: self.signature,
             policy: Policy {
                 filesystem: FilesystemPolicy {
                     readable_roots: self.filesystem.readable_roots,
@@ -914,6 +924,8 @@ pub struct ProfileSummary {
     pub id: String,
     pub display_name: String,
     pub detail: String,
+    #[serde(default)]
+    pub signature_status: policy_core::SignatureStatus,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1014,6 +1026,9 @@ pub trait ServiceQueryApi {
     ) -> Result<PreflightReport, ServiceError>;
     fn load_profile(&self, profile_id: &str) -> Result<ProfileDetail, ServiceError>;
     fn save_profile(&self, detail: ProfileDetail) -> Result<(), ServiceError>;
+    /// Sign a stored custom profile with the given ed25519 private key seed (base64-encoded).
+    /// Rejects tampered profiles and unknown profile IDs.
+    fn sign_profile(&self, profile_id: &str, signing_key_b64: &str) -> Result<(), ServiceError>;
 }
 
 pub struct RampartService<E = GreywallAdapter> {
@@ -1117,6 +1132,7 @@ where
                         .description
                         .clone()
                         .unwrap_or_else(|| "Profile preset".into()),
+                    signature_status: policy_core::verify_signature(profile),
                 })
                 .collect(),
             selected: self.selected.clone(),
@@ -1170,8 +1186,12 @@ where
     fn load_profile(&self, profile_id: &str) -> Result<ProfileDetail, ServiceError> {
         let state = self.store.load_state()?;
         // Custom profiles take precedence over presets.
-        if let Some(custom) = state.custom_profiles.iter().find(|p| p.id == profile_id) {
-            return Ok(custom.clone());
+        if let Some(custom) = state.custom_profiles.iter().find(|p| p.id == profile_id).cloned() {
+            // Recompute signature_status from the stored signature on every load.
+            let profile = custom.clone().into_profile();
+            let mut detail = custom;
+            detail.signature_status = policy_core::verify_signature(&profile);
+            return Ok(detail);
         }
         // Fall back to presets.
         let project_root = detect_repo_root()
@@ -1203,6 +1223,30 @@ where
         } else {
             state.custom_profiles.push(detail);
         }
+        self.store.save_state(&state)?;
+        Ok(())
+    }
+
+    fn sign_profile(&self, profile_id: &str, signing_key_b64: &str) -> Result<(), ServiceError> {
+        use base64::{engine::general_purpose, Engine as _};
+
+        let key_bytes = general_purpose::STANDARD
+            .decode(signing_key_b64)
+            .map_err(|_| ServiceError::InvalidSigningKey)?;
+
+        let mut state = self.store.load_state()?;
+        let stored = state
+            .custom_profiles
+            .iter_mut()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| ServiceError::PresetProfileNotSignable(profile_id.into()))?;
+
+        let mut profile = stored.clone().into_profile();
+        policy_core::sign_profile(&mut profile, "", &key_bytes)
+            .map_err(ServiceError::ProfileSign)?;
+
+        let signed_detail = ProfileDetail::from_profile(&profile);
+        *stored = signed_detail;
         self.store.save_state(&state)?;
         Ok(())
     }
@@ -1358,6 +1402,12 @@ pub enum ServiceError {
     CurrentDirectory(#[source] std::io::Error),
     #[error("project detection failed: {0}")]
     ProjectDetection(String),
+    #[error("profile signing failed: {0}")]
+    ProfileSign(#[source] policy_core::SignError),
+    #[error("invalid signing key (expected base64-encoded 32-byte ed25519 seed)")]
+    InvalidSigningKey,
+    #[error("only custom profiles can be signed; preset '{0}' is read-only")]
+    PresetProfileNotSignable(String),
 }
 
 #[derive(Debug, Error)]

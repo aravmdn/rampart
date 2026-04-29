@@ -143,6 +143,20 @@ fn save_profile(
 }
 
 #[tauri::command]
+fn sign_profile(
+    state: State<'_, DesktopDaemonState>,
+    profile_id: String,
+    signing_key_b64: String,
+) -> Result<(), String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .sign_profile(&profile_id, &signing_key_b64)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn preflight_check(
     state: State<'_, DesktopDaemonState>,
     project_dir: String,
@@ -186,6 +200,7 @@ fn main() {
             preflight_check,
             load_profile,
             save_profile,
+            sign_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rampart desktop shell");

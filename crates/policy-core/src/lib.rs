@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -285,6 +286,34 @@ impl Policy {
     }
 }
 
+/// An ed25519 signature block attached to a signed profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProfileSignature {
+    /// Base64-encoded ed25519 verifying key (32 bytes).
+    pub signer: String,
+    /// Always "ed25519".
+    pub algorithm: String,
+    /// Base64-encoded ed25519 signature over the canonical profile bytes (64 bytes).
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignatureStatus {
+    #[default]
+    Unsigned,
+    Valid,
+    Invalid,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SignError {
+    #[error("invalid signing key: expected 32-byte ed25519 seed")]
+    InvalidKey,
+    #[error("profile serialization failed")]
+    SerializationFailed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Profile {
     pub id: String,
@@ -294,6 +323,91 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extends: Option<String>,
     pub policy: Policy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<ProfileSignature>,
+}
+
+/// Returns the canonical bytes to sign: the profile serialized to JSON with the
+/// `signature` field absent. Deterministic given the same profile contents.
+fn canonical_profile_bytes(profile: &Profile) -> Vec<u8> {
+    let mut stripped = profile.clone();
+    stripped.signature = None;
+    serde_json::to_vec(&stripped).unwrap_or_default()
+}
+
+/// Verify the signature on a profile. Returns `Unsigned` if no signature block is
+/// present, `Valid` if the signature is correct, `Invalid` otherwise.
+pub fn verify_signature(profile: &Profile) -> SignatureStatus {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let sig_block = match &profile.signature {
+        None => return SignatureStatus::Unsigned,
+        Some(s) => s,
+    };
+
+    if sig_block.algorithm != "ed25519" {
+        return SignatureStatus::Invalid;
+    }
+
+    let vk_bytes = match general_purpose::STANDARD.decode(&sig_block.signer) {
+        Ok(b) => b,
+        Err(_) => return SignatureStatus::Invalid,
+    };
+    let sig_bytes = match general_purpose::STANDARD.decode(&sig_block.value) {
+        Ok(b) => b,
+        Err(_) => return SignatureStatus::Invalid,
+    };
+
+    let vk_arr: [u8; 32] = match vk_bytes.try_into() {
+        Ok(arr) => arr,
+        Err(_) => return SignatureStatus::Invalid,
+    };
+    let vk = match VerifyingKey::from_bytes(&vk_arr) {
+        Ok(k) => k,
+        Err(_) => return SignatureStatus::Invalid,
+    };
+
+    let sig_arr: [u8; 64] = match sig_bytes.try_into() {
+        Ok(arr) => arr,
+        Err(_) => return SignatureStatus::Invalid,
+    };
+    let sig = Signature::from_bytes(&sig_arr);
+
+    let message = canonical_profile_bytes(profile);
+    match vk.verify(&message, &sig) {
+        Ok(_) => SignatureStatus::Valid,
+        Err(_) => SignatureStatus::Invalid,
+    }
+}
+
+/// Sign a profile with an ed25519 private key seed (32 bytes). The `signer_label`
+/// is not used for verification; the verifying key embedded in the signature block
+/// is authoritative. Pass an empty string or a human-readable label as preferred.
+pub fn sign_profile(
+    profile: &mut Profile,
+    _signer_label: &str,
+    key_bytes: &[u8],
+) -> Result<(), SignError> {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let key_arr: [u8; 32] = key_bytes.try_into().map_err(|_| SignError::InvalidKey)?;
+    let signing_key = SigningKey::from_bytes(&key_arr);
+    let verifying_key = signing_key.verifying_key();
+
+    profile.signature = None;
+    let message = canonical_profile_bytes(profile);
+    if message.is_empty() {
+        return Err(SignError::SerializationFailed);
+    }
+
+    let signature = signing_key.sign(&message);
+    profile.signature = Some(ProfileSignature {
+        signer: general_purpose::STANDARD.encode(verifying_key.as_bytes()),
+        algorithm: "ed25519".into(),
+        value: general_purpose::STANDARD.encode(signature.to_bytes()),
+    });
+
+    Ok(())
 }
 
 impl Profile {

@@ -28,6 +28,7 @@ type RawLaunchContext = {
     id: string;
     display_name: string;
     detail: string;
+    signature_status?: string;
   }[];
   selected: {
     project_path: string | null;
@@ -110,6 +111,7 @@ function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
       id: profile.id,
       displayName: profile.display_name,
       detail: profile.detail,
+      signatureStatus: (profile.signature_status ?? "unsigned") as import("./contracts").SignatureStatus,
     })),
     selected: {
       projectPath: raw.selected.project_path,
@@ -237,10 +239,17 @@ export const tauriDaemonClient: DaemonApi = {
     };
   },
   async loadProfile(profileId: string): Promise<ProfileDetail> {
-    return invoke<ProfileDetail>("load_profile", { profileId });
+    const raw = await invoke<ProfileDetail & { signature_status?: string }>("load_profile", { profileId });
+    return {
+      ...raw,
+      signatureStatus: (raw.signature_status ?? raw.signatureStatus ?? "unsigned") as import("./contracts").SignatureStatus,
+    };
   },
   async saveProfile(profile: ProfileDetail): Promise<void> {
     await invoke("save_profile", { profile });
+  },
+  async signProfile(profileId: string, signingKeyB64: string): Promise<void> {
+    await invoke("sign_profile", { profileId, signingKeyB64 });
   },
   async listSessionHistory() {
     const response = await invoke<RawHistoryEntry[]>("list_session_history");

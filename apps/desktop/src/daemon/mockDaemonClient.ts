@@ -12,6 +12,7 @@ import type {
   SelectedLaunchConfig,
   SessionHistoryEntry,
   SessionState,
+  SignatureStatus,
   ViolationEvent,
   ViolationExplanation,
 } from "./contracts";
@@ -42,11 +43,13 @@ const allProfilePresets: Record<string, ProfileSummary[]> = {
       id: "claude-code.standard",
       displayName: "Claude Code Standard",
       detail: "Project read/write, Claude config readable, Anthropic API allowed.",
+      signatureStatus: "unsigned" as SignatureStatus,
     },
     {
       id: "claude-code.strict",
       displayName: "Claude Code Strict",
       detail: "Project read/write only. Network denied. Child processes denied except git.",
+      signatureStatus: "unsigned" as SignatureStatus,
     },
   ],
   codex: [
@@ -54,11 +57,13 @@ const allProfilePresets: Record<string, ProfileSummary[]> = {
       id: "codex.standard",
       displayName: "Codex Standard",
       detail: "Project read/write, OpenAI API allowed. git, node, npm permitted.",
+      signatureStatus: "unsigned" as SignatureStatus,
     },
     {
       id: "codex.strict",
       displayName: "Codex Strict",
       detail: "Project read/write only. Network denied. Only git permitted.",
+      signatureStatus: "unsigned" as SignatureStatus,
     },
   ],
 };
@@ -68,11 +73,13 @@ const genericProfiles: ProfileSummary[] = [
     id: "windows-safe",
     displayName: "Windows Safe",
     detail: "Project scoped read/write. Network denied by default.",
+    signatureStatus: "unsigned" as SignatureStatus,
   },
   {
     id: "windows-strict",
     displayName: "Windows Strict",
     detail: "Project read only outside src. Child process creation denied.",
+    signatureStatus: "unsigned" as SignatureStatus,
   },
 ];
 
@@ -81,6 +88,7 @@ const mockProfileDetails: Record<string, ProfileDetail> = {
     id: "claude-code.standard",
     displayName: "Claude Code Standard",
     detail: "Project read/write, Claude config readable, Anthropic API allowed.",
+    signatureStatus: "unsigned" as SignatureStatus,
     filesystem: {
       readableRoots: ["C:\\projects\\rampart", "C:\\Users\\user\\.claude"],
       writableRoots: ["C:\\projects\\rampart"],
@@ -101,6 +109,7 @@ const mockProfileDetails: Record<string, ProfileDetail> = {
     id: "claude-code.strict",
     displayName: "Claude Code Strict",
     detail: "Project read/write only. Network denied. Child processes denied except git.",
+    signatureStatus: "unsigned" as SignatureStatus,
     filesystem: {
       readableRoots: ["C:\\projects\\rampart"],
       writableRoots: ["C:\\projects\\rampart"],
@@ -121,6 +130,7 @@ const mockProfileDetails: Record<string, ProfileDetail> = {
     id: "codex.standard",
     displayName: "Codex Standard",
     detail: "Project read/write, OpenAI API allowed. git, node, npm permitted.",
+    signatureStatus: "unsigned" as SignatureStatus,
     filesystem: {
       readableRoots: ["C:\\projects\\rampart"],
       writableRoots: ["C:\\projects\\rampart"],
@@ -141,6 +151,7 @@ const mockProfileDetails: Record<string, ProfileDetail> = {
     id: "codex.strict",
     displayName: "Codex Strict",
     detail: "Project read/write only. Network denied. Only git permitted.",
+    signatureStatus: "unsigned" as SignatureStatus,
     filesystem: {
       readableRoots: ["C:\\projects\\rampart"],
       writableRoots: ["C:\\projects\\rampart"],
@@ -161,6 +172,7 @@ const mockProfileDetails: Record<string, ProfileDetail> = {
     id: "windows-safe",
     displayName: "Windows Safe",
     detail: "Project scoped read/write. Network denied by default.",
+    signatureStatus: "unsigned" as SignatureStatus,
     filesystem: {
       readableRoots: ["C:\\projects\\rampart"],
       writableRoots: ["C:\\projects\\rampart\\apps"],
@@ -181,6 +193,7 @@ const mockProfileDetails: Record<string, ProfileDetail> = {
     id: "windows-strict",
     displayName: "Windows Strict",
     detail: "Project read only outside src. Child process creation denied.",
+    signatureStatus: "unsigned" as SignatureStatus,
     filesystem: {
       readableRoots: ["C:\\projects\\rampart"],
       writableRoots: ["C:\\projects\\rampart\\crates"],
@@ -375,6 +388,12 @@ export const mockDaemonClient: DaemonApi = {
   async saveProfile(profile: ProfileDetail): Promise<void> {
     await pause(60);
     profileStore.set(profile.id, { ...profile });
+  },
+  async signProfile(profileId: string, _signingKeyB64: string): Promise<void> {
+    await pause(60);
+    const profile = profileStore.get(profileId);
+    if (!profile) throw new Error(`Profile not found: ${profileId}`);
+    profileStore.set(profileId, { ...profile, signatureStatus: "valid" as SignatureStatus });
   },
   async listSessionHistory(): Promise<SessionHistoryEntry[]> {
     await pause(40);
