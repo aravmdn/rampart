@@ -236,6 +236,16 @@ pub fn run_preflight(
         }
     }
 
+    // Signature validity: an Invalid signature hard-blocks launch
+    let sig_status = policy_core::verify_signature(profile);
+    if matches!(sig_status, policy_core::SignatureStatus::Invalid) {
+        diagnostics.push(PreflightDiagnostic {
+            severity: PreflightSeverity::Fail,
+            label: "Profile signature".into(),
+            detail: "Profile signature is invalid — the profile may have been tampered with. Fix the signature or replace the profile before launching.".into(),
+        });
+    }
+
     // Policy/capability compatibility
     if let Err(errors) = validate_policy_against_capabilities(&profile.policy, capabilities) {
         for item in &errors.items {
@@ -961,6 +971,14 @@ struct PersistedState {
     history: Vec<SessionHistoryRecord>,
     #[serde(default)]
     custom_profiles: Vec<ProfileDetail>,
+    #[serde(default)]
+    sync_config: Option<SyncConfig>,
+    #[serde(default)]
+    audit_queue: Vec<AuditQueueEntry>,
+    #[serde(default)]
+    last_sync_at_ms: Option<u64>,
+    #[serde(default)]
+    last_sync_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -994,6 +1012,10 @@ impl LocalDataStore {
         &self.root
     }
 
+    pub fn profile_cache_dir(&self) -> PathBuf {
+        self.root.join("profile-cache")
+    }
+
     fn load_state(&self) -> Result<PersistedState, StoreError> {
         let raw = fs::read_to_string(&self.state_path).map_err(|source| StoreError::ReadState {
             path: self.state_path.clone(),
@@ -1008,6 +1030,76 @@ impl LocalDataStore {
             path: self.state_path.clone(),
             source,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sync config + status
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConfig {
+    pub endpoint_url: String,
+    pub token: String,
+    pub strip_paths: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncStatus {
+    pub configured: bool,
+    pub queue_depth: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_sync_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct AuditQueueEntry {
+    session_id: String,
+    event: policy_core::AuditEvent,
+    queued_at_ms: u64,
+    sent: bool,
+}
+
+/// Fetch a `Profile` from an HTTPS URL, caching the raw JSON bytes under `cache_dir`.
+/// On network failure, falls back to the cached copy if it exists.
+fn fetch_remote_profile(url: &str, cache_dir: &Path) -> Result<Profile, ServiceError> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let cache_file = cache_dir.join(format!("{:016x}.json", hasher.finish()));
+
+    let fetch_result = (|| -> Result<Vec<u8>, String> {
+        let resp = reqwest::blocking::get(url).map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP {}", resp.status()));
+        }
+        resp.bytes().map(|b| b.to_vec()).map_err(|e| e.to_string())
+    })();
+
+    match fetch_result {
+        Ok(body) => {
+            let profile: Profile = serde_json::from_slice(&body)
+                .map_err(|e| ServiceError::RemoteFetch(format!("invalid profile JSON: {e}")))?;
+            let _ = fs::create_dir_all(cache_dir);
+            let _ = fs::write(&cache_file, &body);
+            Ok(profile)
+        }
+        Err(network_err) => {
+            if cache_file.exists() {
+                let cached = fs::read_to_string(&cache_file)
+                    .map_err(|e| ServiceError::RemoteFetch(e.to_string()))?;
+                serde_json::from_str(&cached)
+                    .map_err(|e| ServiceError::RemoteFetch(e.to_string()))
+            } else {
+                Err(ServiceError::RemoteFetch(network_err))
+            }
+        }
     }
 }
 
@@ -1029,6 +1121,15 @@ pub trait ServiceQueryApi {
     /// Sign a stored custom profile with the given ed25519 private key seed (base64-encoded).
     /// Rejects tampered profiles and unknown profile IDs.
     fn sign_profile(&self, profile_id: &str, signing_key_b64: &str) -> Result<(), ServiceError>;
+    /// Fetch a signed profile from an HTTPS URL, cache to disk, and return its detail.
+    fn load_remote_profile(&self, url: &str) -> Result<ProfileDetail, ServiceError>;
+    /// Persist audit sync configuration.
+    fn configure_sync(&self, config: SyncConfig) -> Result<(), ServiceError>;
+    /// Return current sync queue status without sending anything.
+    fn get_sync_status(&self) -> Result<SyncStatus, ServiceError>;
+    /// Drain the unsent audit queue by POSTing to the configured endpoint.
+    /// Returns updated status. No-op if sync is not configured.
+    fn sync_audit_events(&self) -> Result<SyncStatus, ServiceError>;
 }
 
 pub struct RampartService<E = GreywallAdapter> {
@@ -1077,6 +1178,28 @@ where
     fn persist_history_record(&self, session_id: &str) -> Result<(), ServiceError> {
         let mut state = self.store.load_state()?;
         let record = self.daemon.session_history_record(session_id)?;
+
+        // If sync is configured, append any new audit events to the outbox.
+        if state.sync_config.is_some() {
+            let already_queued: std::collections::HashSet<u64> = state
+                .audit_queue
+                .iter()
+                .filter(|entry| entry.session_id == session_id)
+                .map(|entry| entry.event.sequence)
+                .collect();
+            let now = now_ms();
+            for event in &record.events {
+                if !already_queued.contains(&event.sequence) {
+                    state.audit_queue.push(AuditQueueEntry {
+                        session_id: session_id.to_string(),
+                        event: event.clone(),
+                        queued_at_ms: now,
+                        sent: false,
+                    });
+                }
+            }
+        }
+
         upsert_history_record(&mut state.history, record);
         self.store.save_state(&state)?;
         Ok(())
@@ -1250,6 +1373,118 @@ where
         self.store.save_state(&state)?;
         Ok(())
     }
+
+    fn load_remote_profile(&self, url: &str) -> Result<ProfileDetail, ServiceError> {
+        let cache_dir = self.store.profile_cache_dir();
+        let profile = fetch_remote_profile(url, &cache_dir)?;
+        Ok(ProfileDetail::from_profile(&profile))
+    }
+
+    fn configure_sync(&self, config: SyncConfig) -> Result<(), ServiceError> {
+        let mut state = self.store.load_state()?;
+        state.sync_config = Some(config);
+        self.store.save_state(&state)?;
+        Ok(())
+    }
+
+    fn get_sync_status(&self) -> Result<SyncStatus, ServiceError> {
+        let state = self.store.load_state()?;
+        let queue_depth = state.audit_queue.iter().filter(|e| !e.sent).count();
+        Ok(SyncStatus {
+            configured: state.sync_config.is_some(),
+            queue_depth,
+            last_sync_at_ms: state.last_sync_at_ms,
+            last_error: state.last_sync_error.clone(),
+        })
+    }
+
+    fn sync_audit_events(&self) -> Result<SyncStatus, ServiceError> {
+        let mut state = self.store.load_state()?;
+        let config = match state.sync_config.clone() {
+            Some(c) => c,
+            None => {
+                return Ok(SyncStatus {
+                    configured: false,
+                    queue_depth: 0,
+                    last_sync_at_ms: state.last_sync_at_ms,
+                    last_error: None,
+                });
+            }
+        };
+
+        let pending_indices: Vec<usize> = state
+            .audit_queue
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| !e.sent)
+            .map(|(i, _)| i)
+            .take(500)
+            .collect();
+
+        if pending_indices.is_empty() {
+            return Ok(SyncStatus {
+                configured: true,
+                queue_depth: 0,
+                last_sync_at_ms: state.last_sync_at_ms,
+                last_error: None,
+            });
+        }
+
+        // Build batch payload
+        let events: Vec<serde_json::Value> = pending_indices
+            .iter()
+            .map(|&i| {
+                let entry = &state.audit_queue[i];
+                let mut evt = serde_json::to_value(&entry.event).unwrap_or_default();
+                if config.strip_paths {
+                    if let Some(obj) = evt.as_object_mut() {
+                        obj.insert("message".into(), serde_json::Value::String("<redacted>".into()));
+                    }
+                }
+                evt
+            })
+            .collect();
+
+        let payload = serde_json::json!({ "events": events });
+
+        let send_result = (|| -> Result<(), String> {
+            let client = reqwest::blocking::Client::new();
+            let resp = client
+                .post(&config.endpoint_url)
+                .header("Authorization", format!("Bearer {}", config.token))
+                .json(&payload)
+                .send()
+                .map_err(|e| e.to_string())?;
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("HTTP {}", resp.status()))
+            }
+        })();
+
+        let now = now_ms();
+        match send_result {
+            Ok(()) => {
+                for &i in &pending_indices {
+                    state.audit_queue[i].sent = true;
+                }
+                state.last_sync_at_ms = Some(now);
+                state.last_sync_error = None;
+            }
+            Err(ref err) => {
+                state.last_sync_error = Some(err.clone());
+            }
+        }
+        self.store.save_state(&state)?;
+
+        let queue_depth = state.audit_queue.iter().filter(|e| !e.sent).count();
+        Ok(SyncStatus {
+            configured: true,
+            queue_depth,
+            last_sync_at_ms: state.last_sync_at_ms,
+            last_error: state.last_sync_error.clone(),
+        })
+    }
 }
 
 fn upsert_history_record(history: &mut Vec<SessionHistoryRecord>, record: SessionHistoryRecord) {
@@ -1408,6 +1643,8 @@ pub enum ServiceError {
     InvalidSigningKey,
     #[error("only custom profiles can be signed; preset '{0}' is read-only")]
     PresetProfileNotSignable(String),
+    #[error("remote profile fetch failed: {0}")]
+    RemoteFetch(String),
 }
 
 #[derive(Debug, Error)]

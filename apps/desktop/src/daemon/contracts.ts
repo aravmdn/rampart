@@ -173,6 +173,19 @@ export type SessionHistoryEntry = {
   violations: ViolationEvent[];
 };
 
+export type SyncConfig = {
+  endpointUrl: string;
+  token: string;
+  stripPaths: boolean;
+};
+
+export type SyncStatus = {
+  configured: boolean;
+  queueDepth: number;
+  lastSyncAtMs: number | null;
+  lastError: string | null;
+};
+
 export type DaemonApi = {
   loadLaunchContext: () => Promise<LaunchContext>;
   saveSelectedLaunchConfig: (selected: SelectedLaunchConfig) => Promise<void>;
@@ -186,4 +199,8 @@ export type DaemonApi = {
   loadProfile: (profileId: string) => Promise<ProfileDetail>;
   saveProfile: (profile: ProfileDetail) => Promise<void>;
   signProfile: (profileId: string, signingKeyB64: string) => Promise<void>;
+  loadRemoteProfile: (url: string) => Promise<ProfileDetail>;
+  configureSync: (config: SyncConfig) => Promise<void>;
+  getSyncStatus: () => Promise<SyncStatus>;
+  syncAuditEvents: () => Promise<SyncStatus>;
 };

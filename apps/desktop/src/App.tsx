@@ -31,6 +31,7 @@ import {
   type ProfileSummary,
   type ProjectSummary,
   type SessionHistoryEntry,
+  type SyncStatus,
 } from "./daemon/contracts";
 
 type AppView = "launcher" | "session" | "history" | "profile-editor";
@@ -123,6 +124,10 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [editorProfile, setEditorProfile] = useState<PolicyEditorView | null>(null);
   const [editorSuggestion, setEditorSuggestion] = useState<PolicySuggestion | undefined>(undefined);
   const [editorReturnView, setEditorReturnView] = useState<"launcher" | "session">("launcher");
+  const [syncEndpoint, setSyncEndpoint] = useState("");
+  const [syncToken, setSyncToken] = useState("");
+  const [syncStripPaths, setSyncStripPaths] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -357,6 +362,17 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setViolations([]);
   }
 
+  async function handleSyncSave() {
+    await daemonClient.configureSync({ endpointUrl: syncEndpoint, token: syncToken, stripPaths: syncStripPaths });
+    const status = await daemonClient.getSyncStatus();
+    setSyncStatus(status);
+  }
+
+  async function handleSyncNow() {
+    const status = await daemonClient.syncAuditEvents();
+    setSyncStatus(status);
+  }
+
   // ── Profile editor view ────────────────────────────────────────────
   if (view === "profile-editor" && editorProfile) {
     return (
@@ -536,6 +552,56 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                 </ul>
               </section>
             ) : null}
+
+            <section className="panel">
+              <h2>Audit Sync</h2>
+              <p className="muted">
+                Push local audit events to a team endpoint. Configure below and click Save, then Sync Now.
+              </p>
+              <label className="field-label">
+                Endpoint URL
+                <input
+                  className="field-input"
+                  type="text"
+                  placeholder="https://your-endpoint/api/v1/audit/events"
+                  value={syncEndpoint}
+                  onChange={(e) => setSyncEndpoint(e.target.value)}
+                />
+              </label>
+              <label className="field-label">
+                Bearer token
+                <input
+                  className="field-input"
+                  type="password"
+                  placeholder="team token"
+                  value={syncToken}
+                  onChange={(e) => setSyncToken(e.target.value)}
+                />
+              </label>
+              <label className="field-label checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={syncStripPaths}
+                  onChange={(e) => setSyncStripPaths(e.target.checked)}
+                />
+                {" "}Strip file paths before sending
+              </label>
+              <div className="action-row">
+                <button className="secondary-button" type="button" onClick={() => { void handleSyncSave(); }}>
+                  Save
+                </button>
+                <button className="secondary-button" type="button" onClick={() => { void handleSyncNow(); }} disabled={!syncStatus?.configured}>
+                  Sync now
+                </button>
+              </div>
+              {syncStatus ? (
+                <div className="muted">
+                  {syncStatus.configured ? `Configured · Queue: ${syncStatus.queueDepth}` : "Not configured"}
+                  {syncStatus.lastSyncAtMs ? ` · Last sync: ${formatMs(syncStatus.lastSyncAtMs)}` : ""}
+                  {syncStatus.lastError ? ` · Error: ${syncStatus.lastError}` : ""}
+                </div>
+              ) : null}
+            </section>
 
             <section className="panel">
               <h2>Recent History</h2>

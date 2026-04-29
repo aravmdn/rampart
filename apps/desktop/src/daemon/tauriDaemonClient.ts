@@ -9,6 +9,8 @@ import type {
   SelectedLaunchConfig,
   SessionHistoryEntry,
   SessionState,
+  SyncConfig,
+  SyncStatus,
 } from "./contracts";
 
 type RawLaunchContext = {
@@ -250,6 +252,34 @@ export const tauriDaemonClient: DaemonApi = {
   },
   async signProfile(profileId: string, signingKeyB64: string): Promise<void> {
     await invoke("sign_profile", { profileId, signingKeyB64 });
+  },
+  async loadRemoteProfile(url: string): Promise<ProfileDetail> {
+    const raw = await invoke<ProfileDetail & { signature_status?: string }>("load_remote_profile", { url });
+    return {
+      ...raw,
+      signatureStatus: (raw.signature_status ?? raw.signatureStatus ?? "unsigned") as import("./contracts").SignatureStatus,
+    };
+  },
+  async configureSync(config: SyncConfig): Promise<void> {
+    await invoke("configure_sync", { config });
+  },
+  async getSyncStatus(): Promise<SyncStatus> {
+    const raw = await invoke<{ configured: boolean; queue_depth: number; last_sync_at_ms?: number | null; last_error?: string | null }>("get_sync_status");
+    return {
+      configured: raw.configured,
+      queueDepth: raw.queue_depth,
+      lastSyncAtMs: raw.last_sync_at_ms ?? null,
+      lastError: raw.last_error ?? null,
+    };
+  },
+  async syncAuditEvents(): Promise<SyncStatus> {
+    const raw = await invoke<{ configured: boolean; queue_depth: number; last_sync_at_ms?: number | null; last_error?: string | null }>("sync_audit_events");
+    return {
+      configured: raw.configured,
+      queueDepth: raw.queue_depth,
+      lastSyncAtMs: raw.last_sync_at_ms ?? null,
+      lastError: raw.last_error ?? null,
+    };
   },
   async listSessionHistory() {
     const response = await invoke<RawHistoryEntry[]>("list_session_history");

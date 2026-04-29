@@ -12,7 +12,8 @@ type ActiveEngine = GreywallAdapter;
 
 use rampartd::{
     DaemonApi, LaunchSessionRequest, LocalDataStore, PreflightReport, ProfileDetail, RampartService,
-    SelectedLaunchConfig, ServiceQueryApi, SessionEventRecord, SessionHistoryRecord,
+    SelectedLaunchConfig, ServiceQueryApi, SessionEventRecord, SessionHistoryRecord, SyncConfig,
+    SyncStatus,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -157,6 +158,52 @@ fn sign_profile(
 }
 
 #[tauri::command]
+fn load_remote_profile(
+    state: State<'_, DesktopDaemonState>,
+    url: String,
+) -> Result<ProfileDetail, String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .load_remote_profile(&url)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn configure_sync(
+    state: State<'_, DesktopDaemonState>,
+    config: SyncConfig,
+) -> Result<(), String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .configure_sync(config)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_sync_status(state: State<'_, DesktopDaemonState>) -> Result<SyncStatus, String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .get_sync_status()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn sync_audit_events(state: State<'_, DesktopDaemonState>) -> Result<SyncStatus, String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .sync_audit_events()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn preflight_check(
     state: State<'_, DesktopDaemonState>,
     project_dir: String,
@@ -201,6 +248,10 @@ fn main() {
             load_profile,
             save_profile,
             sign_profile,
+            load_remote_profile,
+            configure_sync,
+            get_sync_status,
+            sync_audit_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rampart desktop shell");

@@ -13,6 +13,8 @@ import type {
   SessionHistoryEntry,
   SessionState,
   SignatureStatus,
+  SyncConfig,
+  SyncStatus,
   ViolationEvent,
   ViolationExplanation,
 } from "./contracts";
@@ -394,6 +396,30 @@ export const mockDaemonClient: DaemonApi = {
     const profile = profileStore.get(profileId);
     if (!profile) throw new Error(`Profile not found: ${profileId}`);
     profileStore.set(profileId, { ...profile, signatureStatus: "valid" as SignatureStatus });
+  },
+  async loadRemoteProfile(url: string): Promise<ProfileDetail> {
+    await pause(200);
+    // Return a synthetic profile representing a remotely fetched one
+    return {
+      id: `remote-${url.split("/").pop() ?? "profile"}`,
+      displayName: "Remote Profile (mock)",
+      detail: `Fetched from ${url}`,
+      signatureStatus: "valid" as SignatureStatus,
+      filesystem: { readableRoots: [], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny" as DefaultAction, allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "deny" as DefaultAction, allowedCommands: [], blockedCommands: [] },
+    };
+  },
+  async configureSync(_config: SyncConfig): Promise<void> {
+    await pause(30);
+  },
+  async getSyncStatus(): Promise<SyncStatus> {
+    await pause(20);
+    return { configured: false, queueDepth: 0, lastSyncAtMs: null, lastError: null };
+  },
+  async syncAuditEvents(): Promise<SyncStatus> {
+    await pause(60);
+    return { configured: false, queueDepth: 0, lastSyncAtMs: null, lastError: null };
   },
   async listSessionHistory(): Promise<SessionHistoryEntry[]> {
     await pause(40);
