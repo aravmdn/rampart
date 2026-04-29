@@ -57,9 +57,27 @@ Reference-driven priorities inside this phase:
 
 ## Phase 4 — Team and distribution features
 
-- Shared policies and signed profile distribution
-- Centralized audit sync
-- Org settings behind clear team/individual boundaries
+Phase 4.1 and 4.2 are complete. Phase 4.3 remains.
+
+- ✓ **Signed profile distribution** (4.1 — complete)
+  - ed25519 signatures on profiles; `sign_profile` command callable from the desktop
+  - `verify_signature` on every profile load; `SignatureStatus` surfaced in profile picker
+  - `fetch_remote_profile`: HTTPS GET with disk cache fallback at `<store>/.rampart/profile-cache/`
+  - Preflight hard-blocks launch when signature status is Invalid
+
+- ✓ **Centralized audit sync** (4.2 — complete, manual flush)
+  - Local audit outbox in persisted state; events queued when sync is configured
+  - `sync_audit_events`: drains up to 500 unsent entries per call, POSTs to configured endpoint with Bearer auth
+  - `strip_paths` option redacts file path values before sending
+  - `configure_sync` / `get_sync_status` Tauri commands; sync settings panel in desktop launcher
+  - Note: sync is currently manual (Sync Now button). A background worker that auto-drains after each session is a follow-up item.
+
+- **Org settings** (4.3 — not yet started)
+  - `OrgPolicy` struct in policy-core (policy floor + scope: agent type + project path glob)
+  - `resolve_effective_policy(local, org)` strict merge — most restrictive value wins per dimension
+  - Org policy distributed as a signed profile fetched via existing HTTPS channel
+  - `preflight_check` annotates diagnostics with "from org policy" when org floor is active
+  - UI: "org policy floor active" badge in launcher capability panel
 
 Reference-driven priorities inside this phase:
 
@@ -73,12 +91,14 @@ Reference-driven priorities inside this phase:
 - Per-agent capability matrices and compatibility checks
 - AppContainer isolation mode for stronger process-level sandboxing
 - Enterprise controls where justified
+- **Violation event streaming in Windows Native mode**: WFP/Job/SACL blocks currently fire at the OS level but do not surface as events in the session console. Closing this gap requires an ETW consumer thread or kernel callback wired into the daemon's event queue.
 
 Reference-driven priorities inside this phase:
 
 - Add headless before enterprise. A CLI path that reuses the daemon's enforcement stack is more valuable earlier than SSO or governance dashboards.
 - Add per-agent capability matrices so broader agent support does not weaken the enforcement contract.
 - Consider plugin and extension points only after Windows enforcement, explanation, and distribution loops are trustworthy.
+- Violation event streaming is the most important UX gap before handing Rampart to external beta users in Windows Native mode.
 
 ## What Changed From Research Review
 

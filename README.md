@@ -9,7 +9,7 @@ The intended desktop product should feel like a local launch-and-control console
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-1f2937.svg)](./LICENSE)
 [![Platform: Windows First](https://img.shields.io/badge/platform-Windows%20first-0f766e.svg)](#current-status)
 [![Architecture: Local First](https://img.shields.io/badge/architecture-local%20first-1d4ed8.svg)](#principles)
-[![Status: MVP](https://img.shields.io/badge/status-MVP-16a34a.svg)](#current-status)
+[![Status: Phase 4](https://img.shields.io/badge/status-Phase%204-16a34a.svg)](#current-status)
 
 ## Overview
 
@@ -135,7 +135,9 @@ Phase 1 and early Phase 2 priorities are now complete:
 - Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
 - Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) is complete and runtime-validated:
+Phases 1, 2, and 3 are complete. Phase 4 is in progress.
+
+**Phase 3 — Windows enforcement engine (complete, runtime-validated)**
 
 - **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` contain the agent and all child processes. The OS terminates the tree when the session ends or Rampart exits. Verified at runtime.
 - **Filesystem write restriction**: agent processes run at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile, system directories — without custom hooks. The project root is patched to a Low mandatory label so the agent can write to its own working directory. Verified at runtime.
@@ -144,9 +146,27 @@ Phase 2 is complete. Phase 3 (Windows enforcement engine, MVP gate) is complete 
 - **WSL2 isolation mode**: users with WSL2 installed can launch agents inside a Linux VM for Linux-native enforcement. Surfaced as a stronger isolation option at preflight when WSL2 is detected.
 - **Honest threat model**: enforcement targets accidental overreach by well-behaved agents, not adversarial processes issuing direct syscalls. This is the real AI coding-agent threat.
 
-**The MVP loop is complete.** A user can pick an agent, project, and profile; launch through Rampart; and have real OS-level enforcement applied to the session. Job Object containment, Low Integrity token, project-root SACL, WFP network filtering, and ETW audit are all runtime-verified on Windows.
+**The MVP enforcement loop is complete and runtime-verified.** A user can pick an agent, project, and profile; launch through Rampart; and have real OS-level enforcement applied to the session.
 
-One known limitation in Windows Native mode: enforcement fires at the OS level but blocked-action events do not stream back to the session console. The blocks are real; the UI feedback loop is silent. WSL2 mode routes through the greywall normalizer and does surface events. This is documented in the threat model and is a candidate for a Phase 4 follow-up.
+One known limitation in Windows Native mode: enforcement fires at the OS level but blocked-action events do not stream back to the session console. The blocks are real; the UI feedback loop is silent. WSL2 mode does surface events. This gap is tracked for a future phase.
+
+**Phase 4 — Team and distribution features (4.1 and 4.2 complete)**
+
+- **Signed profile distribution** (complete): profiles carry an optional ed25519 signature block. Rampart verifies the signature on every load, surfaces the status in the profile picker, and hard-blocks launch if the signature is Invalid. Profiles can be fetched from HTTPS URLs and are cached to disk so sessions are not blocked by transient network failures.
+- **Centralized audit sync** (complete): a local audit outbox accumulates session events when a sync endpoint is configured. The desktop launcher exposes a sync settings panel to enter an endpoint URL and bearer token. Events are sent in batches of up to 500, with an optional path-redaction mode. Sync is currently manual; a background worker is a follow-up item.
+- **Org settings** (not yet started): the plan is an `OrgPolicy` struct in policy-core that defines a minimum policy floor per agent type or project path. `resolve_effective_policy` merges the org floor with the local profile, taking the most restrictive value per dimension. Org policies are distributed as signed profiles via the existing HTTPS fetch path. Preflight will annotate diagnostics with which rules come from the org floor versus the local profile.
+
+**What remains to reach a shippable beta**
+
+| Item | Phase | Status |
+|------|-------|--------|
+| Org settings (OrgPolicy + floor merge) | 4.3 | Not started |
+| Violation event streaming in Windows Native mode | 5 | Not started — requires ETW consumer thread in daemon |
+| Background audit sync worker | 4 follow-up | Not started |
+| Installer / packaging | — | Not started |
+| Per-agent capability matrices | 5 | Not started |
+| Headless `rampart run -- <cmd>` | 5 | Not started |
+| AppContainer isolation mode | 5 | Seam preserved in engine adapter layer |
 
 ## Getting Started
 
