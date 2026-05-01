@@ -1,0 +1,16 @@
+[package]
+name = "rampart-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rampart"
+path = "src/main.rs"
+
+[dependencies]
+rampartd = { path = "../../crates/rampartd" }
+engine-greywall = { path = "../../crates/engine-greywall" }
+engine-windows = { path = "../../crates/engine-windows" }
+serde_json = "1.0"
+ctrlc = "3"

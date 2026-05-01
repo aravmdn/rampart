@@ -18,8 +18,9 @@ use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-// Re-export OrgPolicy for use by main.rs
+// Re-export OrgPolicy and IsolationMode for use by binaries
 pub use policy_core::OrgPolicy;
+pub use policy_core::IsolationMode;
 
 // ---------------------------------------------------------------------------
 // Agent adapters
@@ -1097,6 +1098,15 @@ impl LocalProcessRunner {
         Vec::new()
     }
 
+    /// Returns true if the managed child process for the session is still running.
+    /// Returns false if the process has exited or the session is not found.
+    pub fn is_session_running(&mut self, session_id: &str) -> bool {
+        match self.children.get_mut(session_id) {
+            Some(child) => child.try_wait().map(|status| status.is_none()).unwrap_or(false),
+            None => false,
+        }
+    }
+
     fn stop_session(&mut self, session_id: &str) -> Result<(), ProcessRunnerError> {
         // Drop the job handle first so KILL_ON_JOB_CLOSE fires before we call
         // child.kill(). On non-Windows the map removals are no-op compile-outs.
@@ -1478,6 +1488,11 @@ where
         Ok(session)
     }
 
+    /// Returns true if the agent process for the session is still running.
+    pub fn is_session_running(&mut self, session_id: &str) -> bool {
+        self.daemon.runner.is_session_running(session_id)
+    }
+
     fn trigger_background_sync(&self) {
         let store = self.store.clone();
         std::thread::spawn(move || drain_audit_queue(&store));
@@ -1797,7 +1812,7 @@ fn detect_repo_root() -> Result<PathBuf, ServiceError> {
     }
 }
 
-fn default_agents() -> Vec<AgentCatalogEntry> {
+pub fn default_agents() -> Vec<AgentCatalogEntry> {
     vec![
         AgentCatalogEntry {
             id: "codex".into(),
@@ -1814,7 +1829,7 @@ fn default_agents() -> Vec<AgentCatalogEntry> {
     ]
 }
 
-fn agent_tool_from_id(id: &str) -> AgentTool {
+pub fn agent_tool_from_id(id: &str) -> AgentTool {
     match id {
         "codex" => AgentTool::Codex,
         "claude-code" => AgentTool::ClaudeCode,
@@ -1831,7 +1846,7 @@ fn agent_tool_from_id(id: &str) -> AgentTool {
     }
 }
 
-fn default_profiles() -> Vec<Profile> {
+pub fn default_profiles() -> Vec<Profile> {
     let root = detect_repo_root()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| r"C:\projects\rampart".into());
@@ -1849,7 +1864,7 @@ fn default_profiles() -> Vec<Profile> {
 }
 
 /// Profiles to show in the launcher for a given agent selection.
-fn profiles_for_agent(agent_id: Option<&str>, project_root: &str) -> Vec<Profile> {
+pub fn profiles_for_agent(agent_id: Option<&str>, project_root: &str) -> Vec<Profile> {
     match agent_id {
         Some(id) => {
             let tool = agent_tool_from_id(id);
