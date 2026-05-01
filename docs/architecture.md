@@ -91,7 +91,7 @@ The engine adapter boundary keeps enforcement implementation details out of the 
 
 **WSL2 isolation mode** — complete. Users with WSL2 installed can select a stronger isolation mode that runs the agent inside a Linux VM. `detect_wsl2()` probes at preflight. `Wsl2Enforcer` reports `Supported` capabilities. `LocalProcessRunner` wraps the command as `wsl --cd <linux_path> -- <command>` and skips Win32 enforcement hooks that have no effect inside the VM.
 
-**Runtime validation** — pending. End-to-end violation flow must be tested at runtime with Windows and admin rights. This is the only remaining step before Phase 3 is fully complete.
+**Runtime validation** — complete (2026-04-28). Tests 1–5 all pass: Job Object containment, Low Integrity token, project root SACL, WFP outbound block, ETW audit capture. One known limitation: OS-level blocks do not stream back as violation events in Windows Native mode. Blocks fire correctly; UI feedback is silent. WSL2 mode does surface events.
 
 ## Phase 1 and early Phase 2 implementation status
 
@@ -110,6 +110,20 @@ The following early Phase 2 priorities are also complete:
 - Stable audit taxonomy: `AuditEventCategory` (SessionLifecycle / PolicyEnforcement / SystemAlert) and domain-specific `AuditEventKind` variants (FilesystemAllowed, FilesystemBlocked, NetworkAllowed, NetworkBlocked, ProcessAllowed, ProcessBlocked) replace the generic pair for new events.
 - History detail view: the desktop shell has a dedicated history view. `HistoryList` shows session metadata; `HistoryDetailPanel` shows the full audit trail and violations for a selected session. The launcher's Recent History section links to it.
 - Agent-aware profile presets: `agent_profile_presets()` in policy-core returns tailored standard and strict presets for ClaudeCode, Codex, and Aider. `launch_context()` filters to show only the selected agent's presets. `preflight_check()` resolves profiles from the agent-specific list first.
+
+## Phase 4 implementation status
+
+**Signed profile distribution** — complete. `ProfileSignature` and `SignatureStatus` in policy-core. `sign_profile` / `verify_signature` via `ed25519-dalek`. Signature field on `Profile`; `SignatureStatus` surfaced in profile picker. `fetch_remote_profile` performs HTTPS GET with disk cache fallback. Preflight hard-blocks launch when status is Invalid.
+
+**Centralized audit sync** — complete. `SyncConfig` persisted in local state. `AuditQueueEntry` enqueued in `persist_history_record` when sync is configured. `sync_audit_events` batches up to 500 unsent entries and POSTs to the endpoint with Bearer auth. Optional `strip_paths` redaction. `configure_sync` / `get_sync_status` Tauri commands; sync settings panel in desktop launcher. Background worker (`drain_audit_queue` + `trigger_background_sync`) drains the outbox on every `stop_session`.
+
+**Org settings** — complete. `OrgPolicy` + `OrgPolicyScope` in policy-core. `resolve_effective_policy(local, org)` takes the most restrictive value per dimension; empty org lists are treated as "no opinion" to avoid locking down dimensions the org didn't specify. `org_policy_applies` matches agent type glob and project path prefix. `configure_org_policy_url` / `fetch_org_policy` / `current_org_policy` Tauri commands. Preflight annotates diagnostics with `from_org_policy` when the floor is active; the launcher shows an "Org policy floor active" badge.
+
+## Phase 5 implementation status (in progress)
+
+**Headless CLI** — complete. `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr and streams audit + violation events as JSONL to stdout. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id> --project <path>` lists agent-specific presets.
+
+**WFP violation streaming** — complete (privilege validation pending runtime test). `WfpEventMonitor` subscribes via `FwpmNetEventSubscribe0` and surfaces blocked connections as `SessionEventRecord::Audit` entries in the active session. Events are drained and persisted at `stop_session`. If the subscription fails at Medium integrity (access-denied), a descriptive hint is emitted to stderr. Full violation streaming in Windows Native mode without elevation remains an open UX gap.
 
 ## Research-informed lessons
 
