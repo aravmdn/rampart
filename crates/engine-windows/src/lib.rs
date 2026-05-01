@@ -55,8 +55,10 @@ impl EnforcementEngine for WindowsEnforcer {
             },
             network: NetworkCapabilitySnapshot {
                 // WFP per-app-ID outbound filter blocks network access.
+                // WfpEventMonitor subscribes to classify-drop events so blocked
+                // connections surface in the session console.
                 enforcement: CapabilitySupport::Limited,
-                observation: CapabilitySupport::Unsupported,
+                observation: CapabilitySupport::Limited,
                 proxy_awareness: CapabilitySupport::Unsupported,
             },
             process: ProcessCapabilitySnapshot {
@@ -533,6 +535,9 @@ fn win32_to_nt_path(win32_path: &str) -> Option<String> {
 #[cfg(target_os = "windows")]
 pub struct WfpNetworkGuard {
     engine: windows_sys::Win32::Foundation::HANDLE,
+    /// NT device path of the monitored app (uppercased). Exposed so callers can
+    /// start a `WfpEventMonitor` on the same path without re-resolving.
+    pub nt_path: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -608,7 +613,7 @@ impl WfpNetworkGuard {
                 return Err(WfpError::FilterAddFailed(err));
             }
 
-            Ok(Self { engine })
+            Ok(Self { engine, nt_path: nt_upper })
         }
     }
 }
@@ -739,3 +744,210 @@ impl std::fmt::Display for EtwError {
 }
 
 impl std::error::Error for EtwError {}
+
+// ---------------------------------------------------------------------------
+// WFP event monitor — real-time blocked connection notifications
+// ---------------------------------------------------------------------------
+
+/// A blocked outbound connection captured from a WFP classify-drop event.
+/// Not cfg-gated: the type is part of the public API on all platforms even
+/// though it is only populated on Windows.
+#[derive(Debug, Clone)]
+pub struct BlockedNetworkEvent {
+    pub remote_port: u16,
+    pub occurred_at_ms: u64,
+}
+
+/// Callback context allocated on the heap for the lifetime of the subscription.
+/// Holds the expected NT path (uppercased) and a shared event buffer.
+#[cfg(target_os = "windows")]
+type WfpMonitorCtx = (
+    String,
+    std::sync::Arc<std::sync::Mutex<Vec<BlockedNetworkEvent>>>,
+);
+
+/// WFP callback. Invoked on a BFE internal thread for every net event.
+/// Filters to classify-drop events matching the expected app NT path and
+/// pushes them into the shared buffer.
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn wfp_event_callback(
+    context: *mut core::ffi::c_void,
+    event: *const windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_NET_EVENT1,
+) {
+    use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::FWPM_NET_EVENT_TYPE_CLASSIFY_DROP;
+
+    if context.is_null() || event.is_null() {
+        return;
+    }
+    let ctx = &*(context as *const WfpMonitorCtx);
+    let expected = &ctx.0;
+    let queue = &ctx.1;
+
+    let ev = &*event;
+    if ev.r#type != FWPM_NET_EVENT_TYPE_CLASSIFY_DROP {
+        return;
+    }
+
+    // Decode the app ID blob (null-terminated UTF-16LE) and compare.
+    let app_id = &ev.header.appId;
+    if app_id.size == 0 || app_id.data.is_null() {
+        return;
+    }
+    let app_bytes = core::slice::from_raw_parts(app_id.data, app_id.size as usize);
+    if app_bytes.len() % 2 != 0 {
+        return;
+    }
+    let words: Vec<u16> = app_bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    let app_path_upper = String::from_utf16_lossy(&words)
+        .trim_end_matches('\0')
+        .to_uppercase();
+    if app_path_upper != *expected {
+        return;
+    }
+
+    // Convert FILETIME (100ns intervals since 1601-01-01) to Unix milliseconds.
+    let ft = &ev.header.timeStamp;
+    let filetime_100ns: u64 = ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
+    const EPOCH_DIFF_100NS: u64 = 116_444_736_000_000_000u64;
+    let occurred_at_ms = filetime_100ns
+        .checked_sub(EPOCH_DIFF_100NS)
+        .map(|d| d / 10_000)
+        .unwrap_or(0);
+
+    if let Ok(mut guard) = queue.lock() {
+        guard.push(BlockedNetworkEvent {
+            remote_port: ev.header.remotePort,
+            occurred_at_ms,
+        });
+    }
+}
+
+/// Subscribes to WFP net events and buffers classify-drop events for a specific
+/// app (identified by its NT device path).
+///
+/// Uses a non-dynamic engine session so the subscription is not torn down by the
+/// session flag. Must be dropped to unsubscribe — `Drop` calls
+/// `FwpmNetEventUnsubscribe0` (which blocks until any in-flight callback returns)
+/// then closes the engine handle and frees the callback context.
+#[cfg(target_os = "windows")]
+pub struct WfpEventMonitor {
+    engine: windows_sys::Win32::Foundation::HANDLE,
+    sub_handle: windows_sys::Win32::Foundation::HANDLE,
+    events: std::sync::Arc<std::sync::Mutex<Vec<BlockedNetworkEvent>>>,
+    ctx_raw: *mut WfpMonitorCtx,
+}
+
+#[cfg(target_os = "windows")]
+impl WfpEventMonitor {
+    /// Subscribe to WFP events for the app at `app_nt_path` (NT device path,
+    /// uppercase). Returns `Err` on failure (e.g. insufficient privileges).
+    pub fn start(app_nt_path: &str) -> Result<Self, WfpMonitorError> {
+        use core::mem::zeroed;
+        use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
+            FwpmEngineClose0, FwpmEngineOpen0, FwpmNetEventSubscribe0,
+            FWPM_NET_EVENT_SUBSCRIPTION0, FWPM_SESSION0,
+        };
+
+        let events: std::sync::Arc<std::sync::Mutex<Vec<BlockedNetworkEvent>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let ctx: Box<WfpMonitorCtx> =
+            Box::new((app_nt_path.to_string(), std::sync::Arc::clone(&events)));
+        let ctx_raw = Box::into_raw(ctx);
+
+        unsafe {
+            let mut engine: windows_sys::Win32::Foundation::HANDLE = 0;
+            let mut session: FWPM_SESSION0 = zeroed();
+            // flags = 0: non-dynamic. Objects persist until explicitly deleted or
+            // the engine handle is closed. The handle is our cleanup mechanism.
+            let err = FwpmEngineOpen0(
+                core::ptr::null(),
+                10, // RPC_C_AUTHN_WINNT
+                core::ptr::null(),
+                &session,
+                &mut engine,
+            );
+            if err != 0 {
+                drop(Box::from_raw(ctx_raw));
+                return Err(WfpMonitorError::EngineOpenFailed(err));
+            }
+
+            let mut sub: FWPM_NET_EVENT_SUBSCRIPTION0 = zeroed();
+            // enumTemplate = null → receive all events; the callback filters by app ID.
+            sub.enumTemplate = core::ptr::null_mut();
+
+            let mut sub_handle: windows_sys::Win32::Foundation::HANDLE = 0;
+            let err = FwpmNetEventSubscribe0(
+                engine,
+                &sub,
+                Some(wfp_event_callback),
+                ctx_raw as *const core::ffi::c_void,
+                &mut sub_handle,
+            );
+            if err != 0 {
+                FwpmEngineClose0(engine);
+                drop(Box::from_raw(ctx_raw));
+                return Err(WfpMonitorError::SubscribeFailed(err));
+            }
+
+            Ok(Self { engine, sub_handle, events, ctx_raw })
+        }
+    }
+
+    /// Clone all pending events without consuming them. Used for live session
+    /// polling so events remain in the buffer and appear on every poll.
+    pub fn peek(&self) -> Vec<BlockedNetworkEvent> {
+        self.events.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    /// Drain all pending events, emptying the buffer. Used at session stop to
+    /// persist events into the permanent audit queue.
+    pub fn drain(&self) -> Vec<BlockedNetworkEvent> {
+        self.events
+            .lock()
+            .map(|mut g| std::mem::take(&mut *g))
+            .unwrap_or_default()
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for WfpEventMonitor {
+    fn drop(&mut self) {
+        unsafe {
+            use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
+                FwpmEngineClose0, FwpmNetEventUnsubscribe0,
+            };
+            // Unsubscribe first — blocks until any in-progress callback returns.
+            // After this returns, ctx_raw is guaranteed not to be accessed by WFP.
+            FwpmNetEventUnsubscribe0(self.engine, self.sub_handle);
+            FwpmEngineClose0(self.engine);
+            drop(Box::from_raw(self.ctx_raw));
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for WfpEventMonitor {}
+
+#[derive(Debug)]
+pub enum WfpMonitorError {
+    EngineOpenFailed(u32),
+    SubscribeFailed(u32),
+}
+
+impl std::fmt::Display for WfpMonitorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WfpMonitorError::EngineOpenFailed(code) => {
+                write!(f, "FwpmEngineOpen0 for event monitor failed: {code:#010x}")
+            }
+            WfpMonitorError::SubscribeFailed(code) => {
+                write!(f, "FwpmNetEventSubscribe0 failed: {code:#010x}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WfpMonitorError {}

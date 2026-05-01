@@ -1,8 +1,9 @@
 use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEngineEventKind};
+use engine_windows::BlockedNetworkEvent;
 #[cfg(target_os = "windows")]
 use engine_windows::{
     patch_project_low_integrity_label, set_process_low_integrity, EtwAuditProvider, WindowsJob,
-    WfpNetworkGuard,
+    WfpEventMonitor, WfpNetworkGuard,
 };
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
@@ -835,6 +836,40 @@ where
             .ok_or_else(|| DaemonError::UnknownSession(session_id.into()))?;
         let ended_at_ms = session.ended_at_ms.unwrap_or_else(now_ms);
 
+        // Drain any buffered WFP events and persist them into the permanent queue
+        // before computing next_sequence, so SessionEnded gets a correct sequence
+        // number and the events appear in session history.
+        {
+            let wfp_events = self.runner.drain_wfp_events(session_id);
+            if !wfp_events.is_empty() {
+                let base_seq = self
+                    .events
+                    .get(session_id)
+                    .map(|q| q.len() as u64)
+                    .unwrap_or(0);
+                let queue = self.events.entry(session_id.into()).or_default();
+                for (i, ev) in wfp_events.into_iter().enumerate() {
+                    queue.push_back(SessionEventRecord::Audit(AuditEvent {
+                        session_id: session_id.into(),
+                        sequence: base_seq + 1 + i as u64,
+                        occurred_at_ms: ev.occurred_at_ms,
+                        kind: AuditEventKind::NetworkBlocked,
+                        category: AuditEventCategory::PolicyEnforcement,
+                        outcome: AuditOutcome::Blocked,
+                        message: format!(
+                            "WFP blocked outbound connection to port {}",
+                            ev.remote_port
+                        ),
+                        violation: None,
+                    }));
+                }
+            }
+            // Drop the monitor (unsubscribes from WFP). Must happen after drain
+            // so no events are lost between drain and unsubscribe.
+            #[cfg(target_os = "windows")]
+            self.runner.wfp_monitors.remove(session_id);
+        }
+
         let next_sequence = self
             .events
             .get(session_id)
@@ -866,7 +901,29 @@ where
             .events
             .get(session_id)
             .ok_or_else(|| DaemonError::UnknownSession(session_id.into()))?;
-        Ok(queue.iter().cloned().collect())
+        let mut result: Vec<SessionEventRecord> = queue.iter().cloned().collect();
+
+        // Append WFP blocked-connection events from the live monitor. These are
+        // peeked (not drained) so they reappear on every poll until persisted at
+        // stop_session. Sequence numbers are assigned relative to the current list.
+        let base_seq = result.len() as u64 + 1;
+        for (i, ev) in self.runner.peek_wfp_events(session_id).into_iter().enumerate() {
+            result.push(SessionEventRecord::Audit(AuditEvent {
+                session_id: session_id.into(),
+                sequence: base_seq + i as u64,
+                occurred_at_ms: ev.occurred_at_ms,
+                kind: AuditEventKind::NetworkBlocked,
+                category: AuditEventCategory::PolicyEnforcement,
+                outcome: AuditOutcome::Blocked,
+                message: format!(
+                    "WFP blocked outbound connection to port {}",
+                    ev.remote_port
+                ),
+                violation: None,
+            }));
+        }
+
+        Ok(result)
     }
 }
 
@@ -896,6 +953,8 @@ pub struct LocalProcessRunner {
     jobs: HashMap<String, WindowsJob>,
     #[cfg(target_os = "windows")]
     wfp_guards: HashMap<String, WfpNetworkGuard>,
+    #[cfg(target_os = "windows")]
+    wfp_monitors: HashMap<String, WfpEventMonitor>,
 }
 
 impl Default for LocalProcessRunner {
@@ -906,6 +965,8 @@ impl Default for LocalProcessRunner {
             jobs: HashMap::new(),
             #[cfg(target_os = "windows")]
             wfp_guards: HashMap::new(),
+            #[cfg(target_os = "windows")]
+            wfp_monitors: HashMap::new(),
         }
     }
 }
@@ -978,7 +1039,21 @@ impl LocalProcessRunner {
 
             match WfpNetworkGuard::open(pid, &adapter.command) {
                 Ok(guard) => {
+                    let nt_path = guard.nt_path.clone();
                     self.wfp_guards.insert(session.id.clone(), guard);
+                    // Start the event monitor on the same NT path so blocked
+                    // connections surface in the session console.
+                    match WfpEventMonitor::start(&nt_path) {
+                        Ok(monitor) => {
+                            self.wfp_monitors.insert(session.id.clone(), monitor);
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "rampartd: WFP event monitor failed for session '{}': {error}",
+                                session.id
+                            );
+                        }
+                    }
                 }
                 Err(error) => {
                     eprintln!(
@@ -994,6 +1069,32 @@ impl LocalProcessRunner {
             pid: Some(pid),
             command: adapter.command,
         })
+    }
+
+    /// Snapshot (clone) all buffered WFP blocked-connection events without consuming
+    /// them. Events remain in the buffer and reappear on the next call.
+    #[allow(unused_variables, unreachable_code)]
+    fn peek_wfp_events(&self, session_id: &str) -> Vec<BlockedNetworkEvent> {
+        #[cfg(target_os = "windows")]
+        return self
+            .wfp_monitors
+            .get(session_id)
+            .map(|m| m.peek())
+            .unwrap_or_default();
+        Vec::new()
+    }
+
+    /// Drain all buffered WFP blocked-connection events, emptying the buffer.
+    /// Called at session stop to persist events into the permanent audit queue.
+    #[allow(unused_variables, unreachable_code)]
+    fn drain_wfp_events(&self, session_id: &str) -> Vec<BlockedNetworkEvent> {
+        #[cfg(target_os = "windows")]
+        return self
+            .wfp_monitors
+            .get(session_id)
+            .map(|m| m.drain())
+            .unwrap_or_default();
+        Vec::new()
     }
 
     fn stop_session(&mut self, session_id: &str) -> Result<(), ProcessRunnerError> {
