@@ -1192,6 +1192,72 @@ struct AuditQueueEntry {
     sent: bool,
 }
 
+/// Drain unsent audit queue entries to the configured sync endpoint.
+/// Fire-and-forget: errors are recorded in persisted state but not propagated.
+fn drain_audit_queue(store: &LocalDataStore) {
+    let mut state = match store.load_state() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let config = match state.sync_config.clone() {
+        Some(c) => c,
+        None => return,
+    };
+    let pending_indices: Vec<usize> = state
+        .audit_queue
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !e.sent)
+        .map(|(i, _)| i)
+        .take(500)
+        .collect();
+    if pending_indices.is_empty() {
+        return;
+    }
+    let events: Vec<serde_json::Value> = pending_indices
+        .iter()
+        .map(|&i| {
+            let entry = &state.audit_queue[i];
+            let mut evt = serde_json::to_value(&entry.event).unwrap_or_default();
+            if config.strip_paths {
+                if let Some(obj) = evt.as_object_mut() {
+                    obj.insert("message".into(), serde_json::Value::String("<redacted>".into()));
+                }
+            }
+            evt
+        })
+        .collect();
+    let payload = serde_json::json!({ "events": events });
+    let send_result = (|| -> Result<(), String> {
+        let client = reqwest::blocking::Client::new();
+        let resp = client
+            .post(&config.endpoint_url)
+            .header("Authorization", format!("Bearer {}", config.token))
+            .json(&payload)
+            .send()
+            .map_err(|e| e.to_string())?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("HTTP {}", resp.status()))
+        }
+    })();
+    let now = now_ms();
+    match send_result {
+        Ok(()) => {
+            for &i in &pending_indices {
+                state.audit_queue[i].sent = true;
+            }
+            state.last_sync_at_ms = Some(now);
+            state.last_sync_error = None;
+        }
+        Err(ref err) => {
+            state.last_sync_error = Some(err.clone());
+        }
+    }
+    let _ = store.save_state(&state);
+}
+
 /// Generic fetch from HTTPS URL with disk cache and network fallback.
 /// Caches raw JSON bytes under `cache_dir` and deserializes to type `T`.
 /// On network error, falls back to cached copy if it exists.
@@ -1307,7 +1373,13 @@ where
     pub fn stop_session(&mut self, session_id: &str) -> Result<Session, ServiceError> {
         let session = self.daemon.stop_session(session_id)?;
         self.persist_history_record(session_id)?;
+        self.trigger_background_sync();
         Ok(session)
+    }
+
+    fn trigger_background_sync(&self) {
+        let store = self.store.clone();
+        std::thread::spawn(move || drain_audit_queue(&store));
     }
 
     pub fn ingest_raw_event(
@@ -1551,91 +1623,8 @@ where
     }
 
     fn sync_audit_events(&self) -> Result<SyncStatus, ServiceError> {
-        let mut state = self.store.load_state()?;
-        let config = match state.sync_config.clone() {
-            Some(c) => c,
-            None => {
-                return Ok(SyncStatus {
-                    configured: false,
-                    queue_depth: 0,
-                    last_sync_at_ms: state.last_sync_at_ms,
-                    last_error: None,
-                });
-            }
-        };
-
-        let pending_indices: Vec<usize> = state
-            .audit_queue
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| !e.sent)
-            .map(|(i, _)| i)
-            .take(500)
-            .collect();
-
-        if pending_indices.is_empty() {
-            return Ok(SyncStatus {
-                configured: true,
-                queue_depth: 0,
-                last_sync_at_ms: state.last_sync_at_ms,
-                last_error: None,
-            });
-        }
-
-        // Build batch payload
-        let events: Vec<serde_json::Value> = pending_indices
-            .iter()
-            .map(|&i| {
-                let entry = &state.audit_queue[i];
-                let mut evt = serde_json::to_value(&entry.event).unwrap_or_default();
-                if config.strip_paths {
-                    if let Some(obj) = evt.as_object_mut() {
-                        obj.insert("message".into(), serde_json::Value::String("<redacted>".into()));
-                    }
-                }
-                evt
-            })
-            .collect();
-
-        let payload = serde_json::json!({ "events": events });
-
-        let send_result = (|| -> Result<(), String> {
-            let client = reqwest::blocking::Client::new();
-            let resp = client
-                .post(&config.endpoint_url)
-                .header("Authorization", format!("Bearer {}", config.token))
-                .json(&payload)
-                .send()
-                .map_err(|e| e.to_string())?;
-            if resp.status().is_success() {
-                Ok(())
-            } else {
-                Err(format!("HTTP {}", resp.status()))
-            }
-        })();
-
-        let now = now_ms();
-        match send_result {
-            Ok(()) => {
-                for &i in &pending_indices {
-                    state.audit_queue[i].sent = true;
-                }
-                state.last_sync_at_ms = Some(now);
-                state.last_sync_error = None;
-            }
-            Err(ref err) => {
-                state.last_sync_error = Some(err.clone());
-            }
-        }
-        self.store.save_state(&state)?;
-
-        let queue_depth = state.audit_queue.iter().filter(|e| !e.sent).count();
-        Ok(SyncStatus {
-            configured: true,
-            queue_depth,
-            last_sync_at_ms: state.last_sync_at_ms,
-            last_error: state.last_sync_error.clone(),
-        })
+        drain_audit_queue(&self.store);
+        self.get_sync_status()
     }
 
     fn configure_org_policy_url(&mut self, url: Option<String>) -> Result<(), ServiceError> {
