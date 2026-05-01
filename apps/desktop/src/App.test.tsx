@@ -80,6 +80,14 @@ describe("desktop shell", () => {
       }),
       loadProfile: vi.fn().mockResolvedValue(null),
       saveProfile: vi.fn().mockResolvedValue(undefined),
+      signProfile: vi.fn().mockResolvedValue(undefined),
+      loadRemoteProfile: vi.fn().mockResolvedValue(null),
+      configureSync: vi.fn().mockResolvedValue(undefined),
+      getSyncStatus: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      syncAuditEvents: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      configureOrgPolicyUrl: vi.fn().mockResolvedValue(undefined),
+      fetchOrgPolicy: vi.fn().mockResolvedValue(null),
+      currentOrgPolicy: vi.fn().mockResolvedValue(null),
       listSessionHistory: vi.fn().mockResolvedValue([
         {
           session: {
@@ -164,6 +172,14 @@ describe("desktop shell", () => {
       streamSessionEvents: vi.fn().mockResolvedValue({ audit: [], violations: [] }),
       loadProfile: vi.fn().mockResolvedValue(null),
       saveProfile: vi.fn().mockResolvedValue(undefined),
+      signProfile: vi.fn().mockResolvedValue(undefined),
+      loadRemoteProfile: vi.fn().mockResolvedValue(null),
+      configureSync: vi.fn().mockResolvedValue(undefined),
+      getSyncStatus: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      syncAuditEvents: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      configureOrgPolicyUrl: vi.fn().mockResolvedValue(undefined),
+      fetchOrgPolicy: vi.fn().mockResolvedValue(null),
+      currentOrgPolicy: vi.fn().mockResolvedValue(null),
       listSessionHistory: vi.fn().mockResolvedValue([
         {
           session: {

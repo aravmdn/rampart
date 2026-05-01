@@ -55,29 +55,27 @@ Reference-driven priorities inside this phase:
 - Wire enforcement events into the existing audit taxonomy without inventing a separate format.
 - Leave a clean seam for stronger isolation modes in later phases.
 
-## Phase 4 — Team and distribution features
+## Phase 4 — Team and distribution features (complete)
 
-Phase 4.1 and 4.2 are complete. Phase 4.3 remains.
-
-- ✓ **Signed profile distribution** (4.1 — complete)
+- ✓ **Signed profile distribution** (4.1)
   - ed25519 signatures on profiles; `sign_profile` command callable from the desktop
   - `verify_signature` on every profile load; `SignatureStatus` surfaced in profile picker
   - `fetch_remote_profile`: HTTPS GET with disk cache fallback at `<store>/.rampart/profile-cache/`
   - Preflight hard-blocks launch when signature status is Invalid
 
-- ✓ **Centralized audit sync** (4.2 — complete, manual flush)
+- ✓ **Centralized audit sync with background worker** (4.2)
   - Local audit outbox in persisted state; events queued when sync is configured
   - `sync_audit_events`: drains up to 500 unsent entries per call, POSTs to configured endpoint with Bearer auth
   - `strip_paths` option redacts file path values before sending
   - `configure_sync` / `get_sync_status` Tauri commands; sync settings panel in desktop launcher
-  - Note: sync is currently manual (Sync Now button). A background worker that auto-drains after each session is a follow-up item.
+  - Background worker: `drain_audit_queue` free function; `trigger_background_sync` spawns thread on every `stop_session`
 
-- **Org settings** (4.3 — not yet started)
-  - `OrgPolicy` struct in policy-core (policy floor + scope: agent type + project path glob)
+- ✓ **Org settings** (4.3)
+  - `OrgPolicy` + `OrgPolicyScope` structs in policy-core (policy floor + scope: agent type glob + project path glob)
   - `resolve_effective_policy(local, org)` strict merge — most restrictive value wins per dimension
-  - Org policy distributed as a signed profile fetched via existing HTTPS channel
-  - `preflight_check` annotates diagnostics with "from org policy" when org floor is active
-  - UI: "org policy floor active" badge in launcher capability panel
+  - `org_policy_applies` scope matching for agent type and project path prefix
+  - `preflight_check` annotates diagnostics with `from_org_policy` when org floor is active
+  - UI: "Org policy floor active" badge in launcher preflight panel; `[from org policy]` inline tags on affected diagnostics
 
 Reference-driven priorities inside this phase:
 

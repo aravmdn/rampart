@@ -235,10 +235,13 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   }
 
   async function handleSaveProfile(updated: PolicyEditorView) {
-    await daemonClient.saveProfile(updated);
+    const detail: ProfileDetail = { ...updated, signatureStatus: "unsigned" };
+    await daemonClient.saveProfile(detail);
     setProfiles((prev) =>
       prev.map((p) =>
-        p.id === updated.id ? { id: updated.id, displayName: updated.displayName, detail: updated.detail } : p,
+        p.id === updated.id
+          ? { id: updated.id, displayName: updated.displayName, detail: updated.detail, signatureStatus: "unsigned" as const }
+          : p,
       ),
     );
     setEditorProfile(null);

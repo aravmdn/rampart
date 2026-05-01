@@ -89,11 +89,11 @@ Reference-informed next steps inside those phases:
   - Done: WSL2 isolation mode — `IsolationMode` enum, `detect_wsl2()` preflight, `Wsl2Enforcer`, WSL2 launch path via `wsl --cd`
   - Done: `threat-model.md` — honest accidental-overreach framing, gaps, WSL2/AppContainer seam
   - Known limitation: violation events blocked by WFP/Job/SACL do not stream back to the session console in Windows Native mode; blocks fire at OS level but UI feedback is silent; WSL2 mode does surface events via greywall normalizer
-- Phase 4 (in progress — 4.1 and 4.2 complete):
+- Phase 4 (complete):
   - ✓ Signed profile distribution: ed25519 signatures on profiles; HTTPS fetch + disk cache; preflight blocks invalid signatures
   - ✓ Centralized audit sync: local audit queue, batch POST to team endpoint, configure_sync / get_sync_status / sync_audit_events commands, sync settings panel
-  - Remaining: Phase 4.3 org settings (OrgPolicy struct, resolve_effective_policy floor merge, org policy preflight annotation)
-  - Remaining: background sync worker (auto-drain queue without manual Sync Now)
+  - ✓ Background sync worker: drain_audit_queue free function; trigger_background_sync spawns std::thread on stop_session; sync_audit_events delegates to same function
+  - ✓ Org settings: OrgPolicy + OrgPolicyScope structs; resolve_effective_policy strict merge; org policy preflight annotation with from_org_policy markers; "Org policy floor active" notice; UI badge + inline tags
 - Phase 5 (later):
   - headless launch paths, AppContainer isolation mode, broader engine support, enterprise controls
   - violation event streaming in Windows Native mode (currently silent; WSL2 mode surfaces events)
