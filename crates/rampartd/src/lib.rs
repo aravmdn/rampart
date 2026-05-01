@@ -3,7 +3,7 @@ use engine_windows::BlockedNetworkEvent;
 #[cfg(target_os = "windows")]
 use engine_windows::{
     patch_project_low_integrity_label, set_process_low_integrity, EtwAuditProvider, WindowsJob,
-    WfpEventMonitor, WfpNetworkGuard,
+    WfpEventMonitor, WfpMonitorError, WfpNetworkGuard,
 };
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
@@ -1049,8 +1049,18 @@ impl LocalProcessRunner {
                             self.wfp_monitors.insert(session.id.clone(), monitor);
                         }
                         Err(error) => {
+                            // ERROR_ACCESS_DENIED (5): FwpmNetEventSubscribe0 requires
+                            // FWPM_ACTRL_SUBSCRIBE on the BFE security descriptor, which is
+                            // not granted to Medium-integrity processes by default.
+                            let hint = match &error {
+                                WfpMonitorError::SubscribeFailed(5)
+                                | WfpMonitorError::EngineOpenFailed(5) => {
+                                    " — run as Administrator to enable network violation streaming"
+                                }
+                                _ => "",
+                            };
                             eprintln!(
-                                "rampartd: WFP event monitor failed for session '{}': {error}",
+                                "rampartd: WFP event monitor failed for session '{}': {error}{hint}",
                                 session.id
                             );
                         }
