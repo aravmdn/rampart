@@ -4,6 +4,8 @@ import type {
   DaemonApi,
   LaunchContext,
   LaunchSessionRequest,
+  OrgPolicy,
+  OrgPolicyScope,
   PreflightReport,
   ProfileDetail,
   SelectedLaunchConfig,
@@ -100,6 +102,96 @@ type RawHistoryEntry = {
   violations: RawViolation[];
 };
 
+type RawPreflightDiagnostic = {
+  severity: string;
+  label: string;
+  detail: string;
+  from_org_policy?: boolean;
+};
+
+type RawPreflightReport = {
+  ready: boolean;
+  diagnostics: RawPreflightDiagnostic[];
+};
+
+function mapPreflightReport(raw: RawPreflightReport): import("./contracts").PreflightReport {
+  return {
+    ready: raw.ready,
+    diagnostics: raw.diagnostics.map((d) => ({
+      severity: d.severity as import("./contracts").PreflightSeverity,
+      label: d.label,
+      detail: d.detail,
+      fromOrgPolicy: d.from_org_policy ?? false,
+    })),
+  };
+}
+
+type RawOrgPolicyScope = {
+  agent_types?: string[] | null;
+  project_path_glob?: string | null;
+};
+
+type RawOrgPolicy = {
+  id: string;
+  name: string;
+  description?: string | null;
+  scope?: RawOrgPolicyScope | null;
+  policy: {
+    filesystem: {
+      readable_roots: string[];
+      writable_roots: string[];
+      blocked_roots: string[];
+    };
+    network: {
+      default_action: string;
+      allowed_hosts: string[];
+      blocked_hosts: string[];
+    };
+    process: {
+      default_action: string;
+      allowed_commands: string[];
+      blocked_commands: string[];
+    };
+  };
+  signature?: {
+    signer: string;
+    algorithm: string;
+    value: string;
+  } | null;
+};
+
+function mapOrgPolicy(raw: RawOrgPolicy): OrgPolicy {
+  return {
+    id: raw.id,
+    name: raw.name,
+    description: raw.description ?? null,
+    scope: raw.scope
+      ? {
+          agentTypes: raw.scope.agent_types ?? null,
+          projectPathGlob: raw.scope.project_path_glob ?? null,
+        }
+      : null,
+    policy: {
+      filesystem: {
+        readableRoots: raw.policy.filesystem.readable_roots,
+        writableRoots: raw.policy.filesystem.writable_roots,
+        blockedRoots: raw.policy.filesystem.blocked_roots,
+      },
+      network: {
+        defaultAction: raw.policy.network.default_action as import("./contracts").DefaultAction,
+        allowedHosts: raw.policy.network.allowed_hosts,
+        blockedHosts: raw.policy.network.blocked_hosts,
+      },
+      process: {
+        defaultAction: raw.policy.process.default_action as import("./contracts").DefaultAction,
+        allowedCommands: raw.policy.process.allowed_commands,
+        blockedCommands: raw.policy.process.blocked_commands,
+      },
+    },
+    signature: raw.signature ?? null,
+  };
+}
+
 function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
   return {
     projects: raw.projects,
@@ -190,7 +282,8 @@ export const tauriDaemonClient: DaemonApi = {
     await invoke("save_selected_launch_config", { selected });
   },
   async preflightCheck(projectDir: string, agentId: string, profileId: string): Promise<PreflightReport> {
-    return invoke<PreflightReport>("preflight_check", { projectDir, agentId, profileId });
+    const raw = await invoke<RawPreflightReport>("preflight_check", { projectDir, agentId, profileId });
+    return mapPreflightReport(raw);
   },
   async launchSession(request: LaunchSessionRequest) {
     const response = await invoke<{
@@ -280,6 +373,19 @@ export const tauriDaemonClient: DaemonApi = {
       lastSyncAtMs: raw.last_sync_at_ms ?? null,
       lastError: raw.last_error ?? null,
     };
+  },
+  async configureOrgPolicyUrl(url: string | null): Promise<void> {
+    await invoke("configure_org_policy_url", { url });
+  },
+  async fetchOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
+    const raw = await invoke<any>("fetch_org_policy");
+    if (!raw) return null;
+    return mapOrgPolicy(raw);
+  },
+  async currentOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
+    const raw = await invoke<any>("current_org_policy");
+    if (!raw) return null;
+    return mapOrgPolicy(raw);
   },
   async listSessionHistory() {
     const response = await invoke<RawHistoryEntry[]>("list_session_history");

@@ -11,9 +11,9 @@ type ActiveEngine = WindowsEnforcer;
 type ActiveEngine = GreywallAdapter;
 
 use rampartd::{
-    DaemonApi, LaunchSessionRequest, LocalDataStore, PreflightReport, ProfileDetail, RampartService,
-    SelectedLaunchConfig, ServiceQueryApi, SessionEventRecord, SessionHistoryRecord, SyncConfig,
-    SyncStatus,
+    DaemonApi, LaunchSessionRequest, LocalDataStore, OrgPolicy, PreflightReport, ProfileDetail,
+    RampartService, SelectedLaunchConfig, ServiceQueryApi, SessionEventRecord, SessionHistoryRecord,
+    SyncConfig, SyncStatus,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -204,6 +204,39 @@ fn sync_audit_events(state: State<'_, DesktopDaemonState>) -> Result<SyncStatus,
 }
 
 #[tauri::command]
+fn configure_org_policy_url(
+    state: State<'_, DesktopDaemonState>,
+    url: Option<String>,
+) -> Result<(), String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .configure_org_policy_url(url)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn fetch_org_policy(state: State<'_, DesktopDaemonState>) -> Result<Option<OrgPolicy>, String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .fetch_org_policy()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn current_org_policy(state: State<'_, DesktopDaemonState>) -> Result<Option<OrgPolicy>, String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .current_org_policy()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn preflight_check(
     state: State<'_, DesktopDaemonState>,
     project_dir: String,
@@ -252,6 +285,9 @@ fn main() {
             configure_sync,
             get_sync_status,
             sync_audit_events,
+            configure_org_policy_url,
+            fetch_org_policy,
+            current_org_policy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rampart desktop shell");

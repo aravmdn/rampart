@@ -340,9 +340,9 @@ export const mockDaemonClient: DaemonApi = {
     return {
       ready: true,
       diagnostics: [
-        { severity: "pass", label: "Project directory", detail: "Directory exists." },
-        { severity: "warning", label: "Agent binary", detail: "codex not found on PATH." },
-        { severity: "warning", label: "Filesystem enforcement", detail: "Unsupported on windows with greywall." },
+        { severity: "pass", label: "Project directory", detail: "Directory exists.", fromOrgPolicy: false },
+        { severity: "warning", label: "Agent binary", detail: "codex not found on PATH.", fromOrgPolicy: false },
+        { severity: "warning", label: "Filesystem enforcement", detail: "Unsupported on windows with greywall.", fromOrgPolicy: false },
       ],
     };
   },
@@ -420,6 +420,17 @@ export const mockDaemonClient: DaemonApi = {
   async syncAuditEvents(): Promise<SyncStatus> {
     await pause(60);
     return { configured: false, queueDepth: 0, lastSyncAtMs: null, lastError: null };
+  },
+  async configureOrgPolicyUrl(_url: string | null): Promise<void> {
+    await pause(30);
+  },
+  async fetchOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
+    await pause(150);
+    return null;
+  },
+  async currentOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
+    await pause(20);
+    return null;
   },
   async listSessionHistory(): Promise<SessionHistoryEntry[]> {
     await pause(40);

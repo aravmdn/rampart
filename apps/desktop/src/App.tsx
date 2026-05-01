@@ -7,6 +7,7 @@ import {
   PickerSection,
   ProfileEditorPanel,
   SessionStatusPanel,
+  StatusBadge,
   ViolationList,
   explainViolation,
   type CapabilityView,
@@ -538,13 +539,21 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
 
             {preflight ? (
               <section className="panel">
-                <h2>Preflight Diagnostics</h2>
+                <div className="panel-header">
+                  <h2>Preflight Diagnostics</h2>
+                  {preflight.diagnostics.some((d) => d.fromOrgPolicy) ? (
+                    <StatusBadge tone="warn">Org policy floor active</StatusBadge>
+                  ) : null}
+                </div>
                 <ul className="plain-list">
                   {preflight.diagnostics.map((diagnostic, index) => (
                     <li key={index}>
                       <strong>
                         {diagnostic.severity === "pass" ? "\u2713" : diagnostic.severity === "fail" ? "\u2717" : "\u26A0"}{" "}
                         {diagnostic.label}
+                        {diagnostic.fromOrgPolicy ? (
+                          <span> <span className="org-policy-tag">[from org policy]</span></span>
+                        ) : null}
                       </strong>
                       <div className="muted">{diagnostic.detail}</div>
                     </li>

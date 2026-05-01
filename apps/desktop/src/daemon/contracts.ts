@@ -24,6 +24,40 @@ export type ProfileDetail = {
   signatureStatus: SignatureStatus;
 };
 
+export type OrgPolicyScope = {
+  agentTypes?: string[] | null;
+  projectPathGlob?: string | null;
+};
+
+export type OrgPolicy = {
+  id: string;
+  name: string;
+  description?: string | null;
+  scope?: OrgPolicyScope | null;
+  policy: {
+    filesystem: {
+      readableRoots: string[];
+      writableRoots: string[];
+      blockedRoots: string[];
+    };
+    network: {
+      defaultAction: DefaultAction;
+      allowedHosts: string[];
+      blockedHosts: string[];
+    };
+    process: {
+      defaultAction: DefaultAction;
+      allowedCommands: string[];
+      blockedCommands: string[];
+    };
+  };
+  signature?: {
+    signer: string;
+    algorithm: string;
+    value: string;
+  } | null;
+};
+
 export const TASK3_API_NAMES = {
   loadLaunchContext: "load_launch_context",
   saveSelectedLaunchConfig: "save_selected_launch_config",
@@ -148,6 +182,8 @@ export type PreflightDiagnostic = {
   severity: PreflightSeverity;
   label: string;
   detail: string;
+  /** True when this diagnostic was added or promoted due to the org policy floor. */
+  fromOrgPolicy: boolean;
 };
 
 export type PreflightReport = {
@@ -203,4 +239,7 @@ export type DaemonApi = {
   configureSync: (config: SyncConfig) => Promise<void>;
   getSyncStatus: () => Promise<SyncStatus>;
   syncAuditEvents: () => Promise<SyncStatus>;
+  configureOrgPolicyUrl: (url: string | null) => Promise<void>;
+  fetchOrgPolicy: () => Promise<OrgPolicy | null>;
+  currentOrgPolicy: () => Promise<OrgPolicy | null>;
 };

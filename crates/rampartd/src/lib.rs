@@ -7,7 +7,7 @@ use engine_windows::{
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
     AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
-    Profile, Session, SessionStatus, ViolationEvent,
+    OrgPolicy, Profile, Session, SessionStatus, ViolationEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+
+// Re-export OrgPolicy for use by main.rs
+pub use policy_core::OrgPolicy;
 
 // ---------------------------------------------------------------------------
 // Agent adapters
@@ -117,6 +120,11 @@ pub struct PreflightDiagnostic {
     pub severity: PreflightSeverity,
     pub label: String,
     pub detail: String,
+    /// True when this diagnostic was added or promoted to a more severe level
+    /// because the org policy floor made the effective profile stricter than
+    /// the local profile alone would have been.
+    #[serde(default)]
+    pub from_org_policy: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -125,12 +133,117 @@ pub struct PreflightReport {
     pub diagnostics: Vec<PreflightDiagnostic>,
 }
 
+/// Return the effective profile to use for a given session context.
+///
+/// If `org` is `Some` and `org_policy_applies` returns true for (agent_type, project_path),
+/// the merged profile from `resolve_effective_policy` is returned. Otherwise the local profile
+/// is cloned unchanged.
+pub fn effective_profile_for(
+    local: &Profile,
+    org: Option<&OrgPolicy>,
+    agent_type: &str,
+    project_path: &str,
+) -> Profile {
+    match org {
+        Some(org_policy) if policy_core::org_policy_applies(org_policy, agent_type, project_path) => {
+            policy_core::resolve_effective_policy(local, org_policy)
+        }
+        _ => local.clone(),
+    }
+}
+
 pub fn run_preflight(
     project_dir: &str,
     agent_tool: &AgentTool,
     profile: &Profile,
     capabilities: &EngineCapabilitySnapshot,
+    org: Option<&OrgPolicy>,
 ) -> PreflightReport {
+    // Determine the agent type string for scope matching.
+    let agent_type = AgentAdapter::for_tool(agent_tool).agent_id;
+
+    // Compute the effective (merged) profile. If no org policy applies, this is
+    // identical to the local profile.
+    let effective = effective_profile_for(profile, org, &agent_type, project_dir);
+
+    // Run preflight against local profile and against the effective profile.
+    // Any diagnostic present in the merged run but absent in the local run (matched
+    // by label+detail), or whose severity escalated, is annotated from_org_policy=true.
+    //
+    // Strategy: run the inner logic twice (local, then merged). Compare by (label, detail)
+    // key; anything new or severity-escalated in the merged set gets the marker.
+    let adapter = AgentAdapter::for_tool(agent_tool);
+    let command = adapter.command;
+    let terminal_first = adapter.terminal_first;
+    let local_diags = run_preflight_inner(project_dir, &command, terminal_first, profile, capabilities);
+    let merged_diags = run_preflight_inner(project_dir, &command, terminal_first, &effective, capabilities);
+
+    // Build a lookup of local diagnostics by (label, detail) for O(n) comparison.
+    let local_set: std::collections::HashSet<(String, String)> = local_diags
+        .iter()
+        .map(|d| (d.label.clone(), d.detail.clone()))
+        .collect();
+
+    // Build a lookup of local severity by label for escalation detection.
+    let local_severity: std::collections::HashMap<String, &PreflightSeverity> = local_diags
+        .iter()
+        .map(|d| (d.label.clone(), &d.severity))
+        .collect();
+
+    let diagnostics: Vec<PreflightDiagnostic> = merged_diags
+        .into_iter()
+        .map(|mut d| {
+            let key = (d.label.clone(), d.detail.clone());
+            let is_new = !local_set.contains(&key);
+            let is_escalated = local_severity
+                .get(&d.label)
+                .map(|local_sev| severity_rank(&d.severity) > severity_rank(local_sev))
+                .unwrap_or(false);
+            if is_new || is_escalated {
+                d.from_org_policy = true;
+            }
+            d
+        })
+        .collect();
+
+    // Inject an informational diagnostic when org policy is active and applies.
+    let mut final_diagnostics = diagnostics;
+    if org.map(|o| policy_core::org_policy_applies(o, &agent_type, project_dir)).unwrap_or(false) {
+        // Prepend an informational notice (not from_org_policy itself — it's a meta note).
+        final_diagnostics.insert(0, PreflightDiagnostic {
+            severity: PreflightSeverity::Warning,
+            label: "Org policy floor active".into(),
+            detail: "An org policy applies to this session. Some profile settings may be stricter than your local profile; diagnostics marked with org policy origin reflect those restrictions.".into(),
+            from_org_policy: false,
+        });
+    }
+
+    let ready = !final_diagnostics
+        .iter()
+        .any(|d| matches!(d.severity, PreflightSeverity::Fail));
+
+    PreflightReport { ready, diagnostics: final_diagnostics }
+}
+
+/// Numeric rank for severity comparison: higher = more severe.
+fn severity_rank(s: &PreflightSeverity) -> u8 {
+    match s {
+        PreflightSeverity::Pass => 0,
+        PreflightSeverity::Warning => 1,
+        PreflightSeverity::Fail => 2,
+    }
+}
+
+/// Inner preflight logic that runs against a concrete profile (no org merging).
+/// `command` is the binary name to check on PATH (e.g. `"claude"`, not the adapter id).
+/// Returns diagnostics without `from_org_policy` annotations (all false).
+fn run_preflight_inner(
+    project_dir: &str,
+    command: &str,
+    terminal_first: bool,
+    profile: &Profile,
+    capabilities: &EngineCapabilitySnapshot,
+) -> Vec<PreflightDiagnostic> {
     let mut diagnostics = Vec::new();
 
     // Check project directory exists
@@ -140,44 +253,48 @@ pub fn run_preflight(
             severity: PreflightSeverity::Pass,
             label: "Project directory".into(),
             detail: format!("{project_dir} exists and is a directory."),
+            from_org_policy: false,
         });
     } else {
         diagnostics.push(PreflightDiagnostic {
             severity: PreflightSeverity::Fail,
             label: "Project directory".into(),
             detail: format!("{project_dir} does not exist or is not a directory."),
+            from_org_policy: false,
         });
     }
 
-    // Check agent binary is on PATH
-    let adapter = AgentAdapter::for_tool(agent_tool);
-    let binary_found = which_exists(&adapter.command);
+    // Check agent binary is on PATH.
+    // The binary check is profile-independent; same result for both local and
+    // merged runs. We include it in both so label-based comparison is consistent.
+    let binary_found = which_exists(command);
     if binary_found {
         diagnostics.push(PreflightDiagnostic {
             severity: PreflightSeverity::Pass,
             label: "Agent binary".into(),
-            detail: format!("{} found on PATH.", adapter.command),
+            detail: format!("{command} found on PATH."),
+            from_org_policy: false,
         });
     } else {
         diagnostics.push(PreflightDiagnostic {
             severity: PreflightSeverity::Fail,
             label: "Agent binary".into(),
             detail: format!(
-                "{} not found on PATH. Install the agent or check your PATH.",
-                adapter.command
+                "{command} not found on PATH. Install the agent or check your PATH.",
             ),
+            from_org_policy: false,
         });
     }
 
-    // Terminal-first note
-    if adapter.terminal_first {
+    // Terminal-first note (agent-dependent, profile-independent).
+    if terminal_first {
         diagnostics.push(PreflightDiagnostic {
             severity: PreflightSeverity::Warning,
             label: "Terminal-first agent".into(),
             detail: format!(
-                "{} is a terminal-first tool. Rampart will launch it but interaction happens in the agent\u{2019}s own terminal.",
-                adapter.command
+                "{command} is a terminal-first tool. Rampart will launch it but interaction happens in the agent\u{2019}s own terminal.",
             ),
+            from_org_policy: false,
         });
     }
 
@@ -197,6 +314,7 @@ pub fn run_preflight(
                         "{label} is unsupported on {} with {}. Policy rules for this domain will not be enforced.",
                         capabilities.platform, capabilities.engine_name
                     ),
+                    from_org_policy: false,
                 });
             }
             CapabilitySupport::Limited => {
@@ -207,6 +325,7 @@ pub fn run_preflight(
                         "{label} is limited on {} with {}. Some policy rules may not be fully enforced.",
                         capabilities.platform, capabilities.engine_name
                     ),
+                    from_org_policy: false,
                 });
             }
             CapabilitySupport::Supported => {
@@ -214,6 +333,7 @@ pub fn run_preflight(
                     severity: PreflightSeverity::Pass,
                     label: label.into(),
                     detail: format!("{label} supported."),
+                    from_org_policy: false,
                 });
             }
         }
@@ -226,12 +346,14 @@ pub fn run_preflight(
                 severity: PreflightSeverity::Pass,
                 label: "WSL2 isolation available".into(),
                 detail: "WSL2 detected. Select \u{201c}WSL2\u{201d} isolation mode to run the agent inside a Linux VM with Landlock + seccomp enforcement instead of Windows-native controls.".into(),
+                from_org_policy: false,
             });
         } else {
             diagnostics.push(PreflightDiagnostic {
                 severity: PreflightSeverity::Warning,
                 label: "WSL2 not detected".into(),
                 detail: "WSL2 is not installed or has no distributions. Stronger isolation mode is unavailable; Windows-native enforcement (Job Objects + WFP) will be used.".into(),
+                from_org_policy: false,
             });
         }
     }
@@ -243,6 +365,7 @@ pub fn run_preflight(
             severity: PreflightSeverity::Fail,
             label: "Profile signature".into(),
             detail: "Profile signature is invalid — the profile may have been tampered with. Fix the signature or replace the profile before launching.".into(),
+            from_org_policy: false,
         });
     }
 
@@ -253,15 +376,12 @@ pub fn run_preflight(
                 severity: PreflightSeverity::Warning,
                 label: "Policy compatibility".into(),
                 detail: format!("{}: {}", item.field, item.message),
+                from_org_policy: false,
             });
         }
     }
 
-    let ready = !diagnostics
-        .iter()
-        .any(|d| matches!(d.severity, PreflightSeverity::Fail));
-
-    PreflightReport { ready, diagnostics }
+    diagnostics
 }
 
 /// Returns true when WSL2 is available on this Windows host.
@@ -979,6 +1099,10 @@ struct PersistedState {
     last_sync_at_ms: Option<u64>,
     #[serde(default)]
     last_sync_error: Option<String>,
+    #[serde(default)]
+    org_policy_url: Option<String>,
+    #[serde(default)]
+    cached_org_policy: Option<OrgPolicy>,
 }
 
 #[derive(Debug, Clone)]
@@ -1014,6 +1138,10 @@ impl LocalDataStore {
 
     pub fn profile_cache_dir(&self) -> PathBuf {
         self.root.join("profile-cache")
+    }
+
+    pub fn org_policy_cache_dir(&self) -> PathBuf {
+        self.root.join("org-policy-cache")
     }
 
     fn load_state(&self) -> Result<PersistedState, StoreError> {
@@ -1064,9 +1192,13 @@ struct AuditQueueEntry {
     sent: bool,
 }
 
-/// Fetch a `Profile` from an HTTPS URL, caching the raw JSON bytes under `cache_dir`.
-/// On network failure, falls back to the cached copy if it exists.
-fn fetch_remote_profile(url: &str, cache_dir: &Path) -> Result<Profile, ServiceError> {
+/// Generic fetch from HTTPS URL with disk cache and network fallback.
+/// Caches raw JSON bytes under `cache_dir` and deserializes to type `T`.
+/// On network error, falls back to cached copy if it exists.
+fn fetch_remote_cached<T: serde::de::DeserializeOwned>(
+    url: &str,
+    cache_dir: &Path,
+) -> Result<T, ServiceError> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -1084,11 +1216,11 @@ fn fetch_remote_profile(url: &str, cache_dir: &Path) -> Result<Profile, ServiceE
 
     match fetch_result {
         Ok(body) => {
-            let profile: Profile = serde_json::from_slice(&body)
-                .map_err(|e| ServiceError::RemoteFetch(format!("invalid profile JSON: {e}")))?;
+            let item: T = serde_json::from_slice(&body)
+                .map_err(|e| ServiceError::RemoteFetch(format!("invalid JSON: {e}")))?;
             let _ = fs::create_dir_all(cache_dir);
             let _ = fs::write(&cache_file, &body);
-            Ok(profile)
+            Ok(item)
         }
         Err(network_err) => {
             if cache_file.exists() {
@@ -1101,6 +1233,12 @@ fn fetch_remote_profile(url: &str, cache_dir: &Path) -> Result<Profile, ServiceE
             }
         }
     }
+}
+
+/// Fetch a `Profile` from an HTTPS URL, caching the raw JSON bytes under `cache_dir`.
+/// On network failure, falls back to the cached copy if it exists.
+fn fetch_remote_profile(url: &str, cache_dir: &Path) -> Result<Profile, ServiceError> {
+    fetch_remote_cached(url, cache_dir)
 }
 
 pub trait ServiceQueryApi {
@@ -1130,6 +1268,13 @@ pub trait ServiceQueryApi {
     /// Drain the unsent audit queue by POSTing to the configured endpoint.
     /// Returns updated status. No-op if sync is not configured.
     fn sync_audit_events(&self) -> Result<SyncStatus, ServiceError>;
+    /// Set or clear the org policy URL in persisted state.
+    fn configure_org_policy_url(&mut self, url: Option<String>) -> Result<(), ServiceError>;
+    /// Fetch org policy from configured URL, cache to disk, and return it.
+    /// If URL is unset, returns Ok(None). On network error, falls back to disk cache.
+    fn fetch_org_policy(&mut self) -> Result<Option<OrgPolicy>, ServiceError>;
+    /// Return the in-memory cached org policy without network fetch.
+    fn current_org_policy(&self) -> Result<Option<OrgPolicy>, ServiceError>;
 }
 
 pub struct RampartService<E = GreywallAdapter> {
@@ -1303,7 +1448,14 @@ where
             })
             .ok_or_else(|| ServiceError::Daemon(DaemonError::UnknownProfile(profile_id.into())))?;
         let capabilities = self.daemon.detect_capabilities()?;
-        Ok(run_preflight(project_dir, &agent_tool, &profile, &capabilities))
+        // Load the cached org policy and pass it through only if it applies to
+        // this (agent, project) pair. resolve_effective_policy is called inside
+        // run_preflight via effective_profile_for.
+        let state = self.store.load_state()?;
+        let org_policy = state.cached_org_policy.as_ref().filter(|org| {
+            policy_core::org_policy_applies(org, agent_id, project_dir)
+        }).cloned();
+        Ok(run_preflight(project_dir, &agent_tool, &profile, &capabilities, org_policy.as_ref()))
     }
 
     fn load_profile(&self, profile_id: &str) -> Result<ProfileDetail, ServiceError> {
@@ -1484,6 +1636,35 @@ where
             last_sync_at_ms: state.last_sync_at_ms,
             last_error: state.last_sync_error.clone(),
         })
+    }
+
+    fn configure_org_policy_url(&mut self, url: Option<String>) -> Result<(), ServiceError> {
+        let mut state = self.store.load_state()?;
+        state.org_policy_url = url;
+        self.store.save_state(&state)?;
+        Ok(())
+    }
+
+    fn fetch_org_policy(&mut self) -> Result<Option<OrgPolicy>, ServiceError> {
+        let state = self.store.load_state()?;
+        let url = match &state.org_policy_url {
+            Some(u) => u,
+            None => return Ok(None),
+        };
+
+        let cache_dir = self.store.org_policy_cache_dir();
+        let policy: OrgPolicy = fetch_remote_cached(url, &cache_dir)?;
+
+        let mut state = self.store.load_state()?;
+        state.cached_org_policy = Some(policy.clone());
+        self.store.save_state(&state)?;
+
+        Ok(Some(policy))
+    }
+
+    fn current_org_policy(&self) -> Result<Option<OrgPolicy>, ServiceError> {
+        let state = self.store.load_state()?;
+        Ok(state.cached_org_policy.clone())
     }
 }
 
@@ -1671,4 +1852,134 @@ pub enum StoreError {
     Serialize(#[source] serde_json::Error),
     #[error("failed to deserialize local state")]
     Deserialize(#[source] serde_json::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use engine_greywall::GreywallAdapter;
+    use policy_core::{
+        DefaultAction, FilesystemPolicy, NetworkPolicy, OrgPolicy, OrgPolicyScope, Policy,
+        ProcessPolicy, Profile,
+    };
+
+    fn make_profile(network_default: DefaultAction) -> Profile {
+        Profile {
+            id: "test-profile".into(),
+            name: "Test".into(),
+            description: None,
+            extends: None,
+            signature: None,
+            policy: Policy {
+                filesystem: FilesystemPolicy {
+                    readable_roots: vec!["/project".into()],
+                    writable_roots: vec!["/project".into()],
+                    blocked_roots: vec![],
+                },
+                network: NetworkPolicy {
+                    default_action: network_default,
+                    allowed_hosts: vec!["api.example.com".into()],
+                    blocked_hosts: vec![],
+                },
+                process: ProcessPolicy {
+                    default_action: DefaultAction::Allow,
+                    allowed_commands: vec![],
+                    blocked_commands: vec![],
+                },
+            },
+        }
+    }
+
+    fn make_org_policy(network_default: DefaultAction, scope: Option<OrgPolicyScope>) -> OrgPolicy {
+        OrgPolicy {
+            id: "org-policy".into(),
+            name: "Org".into(),
+            description: None,
+            scope,
+            signature: None,
+            policy: Policy {
+                filesystem: FilesystemPolicy {
+                    readable_roots: vec![],
+                    writable_roots: vec![],
+                    blocked_roots: vec![],
+                },
+                network: NetworkPolicy {
+                    default_action: network_default,
+                    allowed_hosts: vec![],
+                    blocked_hosts: vec![],
+                },
+                process: ProcessPolicy {
+                    default_action: DefaultAction::Allow,
+                    allowed_commands: vec![],
+                    blocked_commands: vec![],
+                },
+            },
+        }
+    }
+
+    fn make_capabilities() -> EngineCapabilitySnapshot {
+        GreywallAdapter::default().capability_snapshot()
+    }
+
+    /// Test 1: org policy with stricter network default (Deny) applied to a local profile that
+    /// allows network → the effective profile has network.default_action=Deny.  The diagnostic
+    /// for the policy-compatibility check (or any new diagnostic) that appears only in the merged
+    /// run should carry from_org_policy=true.
+    ///
+    /// Here we use a simpler observable: the "Org policy floor active" informational diagnostic
+    /// is injected whenever an org policy applies, confirming the integration path ran.
+    #[test]
+    fn test_preflight_org_floor_stricter_default_annotated() {
+        // Local profile allows network; org floor denies it.
+        let local = make_profile(DefaultAction::Allow);
+        let org = make_org_policy(DefaultAction::Deny, None); // no scope = applies to all
+
+        let caps = make_capabilities();
+        // project_dir doesn't exist — that's fine; we're testing annotation logic.
+        let report = run_preflight("/nonexistent/project", &AgentTool::ClaudeCode, &local, &caps, Some(&org));
+
+        // The org-floor notice must be present.
+        let org_notice = report.diagnostics.iter().find(|d| d.label == "Org policy floor active");
+        assert!(org_notice.is_some(), "expected 'Org policy floor active' diagnostic");
+
+        // The from_org_policy notice itself must NOT be marked from_org_policy.
+        assert!(!org_notice.unwrap().from_org_policy);
+
+        // At least one diagnostic in the report must carry from_org_policy=true,
+        // because the merged profile differs from the local profile.
+        let org_marked = report.diagnostics.iter().any(|d| d.from_org_policy);
+        assert!(org_marked, "expected at least one diagnostic with from_org_policy=true");
+    }
+
+    /// Test 2: org policy scoped to a different agent type → does NOT apply → preflight
+    /// result is identical to local-only run (no org-marked diagnostics, no notice).
+    #[test]
+    fn test_preflight_org_scope_mismatch_no_org_diagnostics() {
+        let local = make_profile(DefaultAction::Allow);
+        // Scope restricted to "codex"; we're running "claude-code".
+        let scope = OrgPolicyScope {
+            agent_types: Some(vec!["codex".into()]),
+            project_path_glob: None,
+        };
+        let org = make_org_policy(DefaultAction::Deny, Some(scope));
+
+        let caps = make_capabilities();
+        let report_with_org = run_preflight("/nonexistent/project", &AgentTool::ClaudeCode, &local, &caps, Some(&org));
+        let report_local = run_preflight("/nonexistent/project", &AgentTool::ClaudeCode, &local, &caps, None);
+
+        // No org-floor notice.
+        let org_notice = report_with_org.diagnostics.iter().find(|d| d.label == "Org policy floor active");
+        assert!(org_notice.is_none(), "org scope mismatch: should not inject org-floor notice");
+
+        // No from_org_policy markers.
+        let any_org_marked = report_with_org.diagnostics.iter().any(|d| d.from_org_policy);
+        assert!(!any_org_marked, "org scope mismatch: no diagnostics should be from_org_policy");
+
+        // Diagnostic count and labels match local-only run.
+        assert_eq!(
+            report_with_org.diagnostics.len(),
+            report_local.diagnostics.len(),
+            "org scope mismatch: diagnostic count should equal local-only run"
+        );
+    }
 }
