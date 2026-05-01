@@ -240,7 +240,7 @@ const capabilitySnapshot: EngineCapabilitySnapshot = {
     {
       key: "network_egress",
       status: "partial",
-      detail: "Network visibility partial in current Windows path. Full block not active yet.",
+      detail: "WFP outbound block active. Violation events do not stream back in Windows Native mode.",
     },
     {
       key: "violation_streaming",
@@ -288,7 +288,7 @@ const mockExplanation: ViolationExplanation = {
     platform: "windows",
     engine: "rampart-windows-runtime-mock",
     detail:
-      "Windows runtime enforcement support is not yet active. This violation was recorded by the mock adapter.",
+      "This violation was recorded by the mock adapter. Real sessions use Windows Job Objects, WFP, and Low Integrity token.",
   },
   remediationHint:
     "Adjust the profile's filesystem.readable_roots to include the target path if access is required.",
@@ -304,7 +304,7 @@ function buildViolations(sessionId: string): ViolationEvent[] {
       ruleLabel: "Filesystem access limited to selected project root.",
       message: "Policy denied read outside allowed project roots.",
       platformNote:
-        "greywall is the reference adapter only. Windows runtime support remains unverified.",
+        "Mock adapter only. Real enforcement uses Windows Job Objects + Low Integrity token.",
       explanation: mockExplanation,
     },
   ];
