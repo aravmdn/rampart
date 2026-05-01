@@ -83,13 +83,13 @@ Reference-driven priorities inside this phase:
 - Reuse the local event model and profile schema for sync features instead of inventing separate admin-only formats.
 - Treat remote or bridge workflows as access patterns layered on top of local execution, not as a separate product core.
 
-## Phase 5 — Headless, CI, and broader engine support
+## Phase 5 — Headless, CI, and broader engine support (in progress)
 
-- Headless `rampart run -- <agent command>` path reusing desktop launch adapters and compiled profiles
+- ✓ **Headless `rampart run` CLI**: `apps/cli/` binary reuses `RampartService` for full enforcement. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` — preflight to stderr, JSONL events to stdout, clean Ctrl+C shutdown. `rampart list-profiles` enumerates agent-specific presets.
+- ✓ **WFP violation streaming**: `FwpmNetEventSubscribe0` subscription surfaces blocked connections in the session console while a session is live; events are drained and persisted at `stop_session`. (Medium-integrity privilege validation pending runtime test.)
 - Per-agent capability matrices and compatibility checks
 - AppContainer isolation mode for stronger process-level sandboxing
 - Enterprise controls where justified
-- **Violation event streaming in Windows Native mode**: WFP/Job/SACL blocks currently fire at the OS level but do not surface as events in the session console. Closing this gap requires an ETW consumer thread or kernel callback wired into the daemon's event queue.
 
 Reference-driven priorities inside this phase:
 

@@ -9,7 +9,7 @@ The intended desktop product should feel like a local launch-and-control console
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-1f2937.svg)](./LICENSE)
 [![Platform: Windows First](https://img.shields.io/badge/platform-Windows%20first-0f766e.svg)](#current-status)
 [![Architecture: Local First](https://img.shields.io/badge/architecture-local%20first-1d4ed8.svg)](#principles)
-[![Status: Phase 4](https://img.shields.io/badge/status-Phase%204-16a34a.svg)](#current-status)
+[![Status: Phase 5](https://img.shields.io/badge/status-Phase%205-16a34a.svg)](#current-status)
 
 ## Overview
 
@@ -135,7 +135,7 @@ Phase 1 and early Phase 2 priorities are now complete:
 - Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
 - Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
 
-Phases 1, 2, and 3 are complete. Phase 4 is in progress.
+Phases 1–4 are complete. Phase 5 is in progress.
 
 **Phase 3 — Windows enforcement engine (complete, runtime-validated)**
 
@@ -150,23 +150,27 @@ Phases 1, 2, and 3 are complete. Phase 4 is in progress.
 
 One known limitation in Windows Native mode: enforcement fires at the OS level but blocked-action events do not stream back to the session console. The blocks are real; the UI feedback loop is silent. WSL2 mode does surface events. This gap is tracked for a future phase.
 
-**Phase 4 — Team and distribution features (4.1 and 4.2 complete)**
+**Phase 4 — Team and distribution features (complete)**
 
 - **Signed profile distribution** (complete): profiles carry an optional ed25519 signature block. Rampart verifies the signature on every load, surfaces the status in the profile picker, and hard-blocks launch if the signature is Invalid. Profiles can be fetched from HTTPS URLs and are cached to disk so sessions are not blocked by transient network failures.
-- **Centralized audit sync** (complete): a local audit outbox accumulates session events when a sync endpoint is configured. The desktop launcher exposes a sync settings panel to enter an endpoint URL and bearer token. Events are sent in batches of up to 500, with an optional path-redaction mode. Sync is currently manual; a background worker is a follow-up item.
-- **Org settings** (not yet started): the plan is an `OrgPolicy` struct in policy-core that defines a minimum policy floor per agent type or project path. `resolve_effective_policy` merges the org floor with the local profile, taking the most restrictive value per dimension. Org policies are distributed as signed profiles via the existing HTTPS fetch path. Preflight will annotate diagnostics with which rules come from the org floor versus the local profile.
+- **Centralized audit sync** (complete): a local audit outbox accumulates session events when a sync endpoint is configured. The desktop launcher exposes a sync settings panel to enter an endpoint URL and bearer token. Events are sent in batches of up to 500, with an optional path-redaction mode. A background worker drains the outbox on every session stop.
+- **Org settings** (complete): `OrgPolicy` + `OrgPolicyScope` structs define a policy floor keyed to agent type and project path globs. `resolve_effective_policy` merges the org floor with the local profile, taking the most restrictive value per dimension. Preflight annotates diagnostics with `from_org_policy` when the org floor is active; the launcher shows an "Org policy floor active" badge with per-diagnostic `[from org policy]` tags.
+
+**Phase 5 — Headless, CI, and broader engine support (in progress)**
+
+- **Headless `rampart run` CLI** (complete): `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr, streams audit and violation events as JSONL to stdout, and exits cleanly on Ctrl+C or agent exit. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id>` lists available profiles.
+- **WFP violation streaming** (in progress): blocked connections detected by `WfpNetworkGuard` now surface in the session console via `FwpmNetEventSubscribe0`. Whether this subscription succeeds at Medium integrity (non-elevated) is pending runtime validation.
 
 **What remains to reach a shippable beta**
 
 | Item | Phase | Status |
 |------|-------|--------|
-| Org settings (OrgPolicy + floor merge) | 4.3 | Not started |
-| Violation event streaming in Windows Native mode | 5 | Not started — requires ETW consumer thread in daemon |
-| Background audit sync worker | 4 follow-up | Not started |
-| Installer / packaging | — | Not started |
+| Headless `rampart run` CLI | 5 | **Complete** — `apps/cli/` binary; preflight → stderr, JSONL events → stdout, Ctrl+C clean shutdown |
+| Violation event streaming in Windows Native mode | 5 | Open — blocks fire at OS level but don't surface in session console; WSL2 mode surfaces events |
+| WFP event monitor privilege | 5 | Open — unknown whether `FwpmNetEventSubscribe0` works at Medium integrity; degrades silently on failure |
+| AppContainer isolation mode | 5 | Deferred — seam preserved in engine adapter layer |
 | Per-agent capability matrices | 5 | Not started |
-| Headless `rampart run -- <cmd>` | 5 | Not started |
-| AppContainer isolation mode | 5 | Seam preserved in engine adapter layer |
+| Installer / packaging | — | Not started |
 
 ## Getting Started
 
@@ -210,8 +214,9 @@ The desktop wrapper script adds the default `rustup` cargo path if the shell did
 ```text
 rampart/
 |- apps/
-|  `- desktop/
-|     `- src-tauri/
+|  |- desktop/
+|  |  `- src-tauri/
+|  `- cli/           ← headless rampart binary
 |- crates/
 |  |- rampartd/
 |  |- policy-core/

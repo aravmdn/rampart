@@ -51,6 +51,7 @@
 | Module | Type | Path | What it owns | How to run | Tests | Docs | AGENTS |
 |--------|------|------|--------------|------------|-------|------|--------|
 | desktop | tauri | `apps/desktop/` | Local GUI, tray, onboarding, project/profile picker, live session and history views | `pnpm dev` or `npm run dev` from `apps/desktop/` | UI/unit tests from module | `docs/architecture.md` | `apps/desktop/AGENTS.md` |
+| cli | rust | `apps/cli/` | Headless `rampart` binary: `run` + `list-profiles` subcommands; enforcement via RampartService | `cargo build --bin rampart` | — | `README.md` | — |
 | daemon | rust | `crates/rampartd/` | Agent launch orchestration, profile resolution, local APIs, process supervision, persistence | `cargo run -p rampartd` | `cargo test -p rampartd` | `docs/architecture.md` | `crates/rampartd/AGENTS.md` |
 | policy-core | rust library | `crates/policy-core/` | Policy schema, validation, template handling, profile compilation, event normalization | consumed by workspace crates | `cargo test -p policy-core` | `docs/architecture.md` | `crates/policy-core/AGENTS.md` |
 | engine-greywall | rust adapter | `crates/engine-greywall/` | Wrapper around `greywall` binary, binary discovery, version compatibility, stdout/stderr/event parsing, capability reporting | consumed by daemon | `cargo test -p engine-greywall` | `docs/architecture.md` | `crates/engine-greywall/AGENTS.md` |
@@ -94,9 +95,12 @@ Reference-informed next steps inside those phases:
   - ✓ Centralized audit sync: local audit queue, batch POST to team endpoint, configure_sync / get_sync_status / sync_audit_events commands, sync settings panel
   - ✓ Background sync worker: drain_audit_queue free function; trigger_background_sync spawns std::thread on stop_session; sync_audit_events delegates to same function
   - ✓ Org settings: OrgPolicy + OrgPolicyScope structs; resolve_effective_policy strict merge; org policy preflight annotation with from_org_policy markers; "Org policy floor active" notice; UI badge + inline tags
-- Phase 5 (later):
-  - headless launch paths, AppContainer isolation mode, broader engine support, enterprise controls
-  - violation event streaming in Windows Native mode (currently silent; WSL2 mode surfaces events)
+- Phase 5 (in progress):
+  - ✓ Headless CLI: `apps/cli/` binary (`rampart run` + `rampart list-profiles`); full enforcement via RampartService; JSONL event stream to stdout; clean Ctrl+C shutdown
+  - ✓ WFP violation streaming: `FwpmNetEventSubscribe0` subscription surfaces blocked connections in session console; events drained at stop_session; Medium-integrity privilege pending runtime validation
+  - AppContainer isolation mode (seam preserved in engine adapter layer; deferred)
+  - Per-agent capability matrices
+  - Enterprise controls where justified
 
 ## Cross-domain workflows
 - Desktop -> daemon:
