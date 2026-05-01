@@ -23,7 +23,6 @@ import "../../../packages/shared-ui/src/styles.css";
 import "./styles.css";
 import { tauriDaemonClient } from "./daemon/tauriDaemonClient";
 import {
-  TASK3_API_NAMES,
   type AgentTool,
   type DaemonApi,
   type EngineCapabilitySnapshot,
@@ -129,11 +128,15 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [syncToken, setSyncToken] = useState("");
   const [syncStripPaths, setSyncStripPaths] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [orgPolicyUrl, setOrgPolicyUrl] = useState("");
+  const [orgPolicy, setOrgPolicy] = useState<import("./daemon/contracts").OrgPolicy | null>(null);
 
   useEffect(() => {
     void (async () => {
       const launchContext = await daemonClient.loadLaunchContext();
       const recentHistory = await daemonClient.listSessionHistory();
+      const currentOrg = await daemonClient.currentOrgPolicy();
+      setOrgPolicy(currentOrg);
       setProjects(launchContext.projects);
       setAgents(launchContext.agents);
       setProfiles(launchContext.profiles);
@@ -160,6 +163,35 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       profileId,
     });
   }, [agentId, daemonClient, profileId, projectId, projects]);
+
+  // Poll session events while a session is running
+  useEffect(() => {
+    if (!session.id || session.status !== "active") return;
+    const interval = setInterval(() => {
+      void daemonClient.streamSessionEvents(session.id!).then((sessionEvents) => {
+        setEvents(
+          sessionEvents.audit.map((event) => ({
+            id: event.id,
+            label: event.kind,
+            message: event.message,
+          })),
+        );
+        setViolations(
+          sessionEvents.violations.map((violation) => ({
+            id: violation.id,
+            title: `${violation.operation} blocked`,
+            detail: explainViolation(violation),
+            policyRuleId: violation.ruleId,
+            policyRuleLabel: violation.ruleLabel ?? "Project scope guard",
+            platformNote: violation.platformNote ?? undefined,
+            operation: violation.operation,
+            target: violation.target,
+          })),
+        );
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [daemonClient, session.id, session.status]);
 
   // Run preflight whenever selections change
   useEffect(() => {
@@ -366,6 +398,15 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setViolations([]);
   }
 
+  async function handleOrgPolicySave() {
+    await daemonClient.configureOrgPolicyUrl(orgPolicyUrl.trim() || null);
+  }
+
+  async function handleOrgPolicyFetch() {
+    const policy = await daemonClient.fetchOrgPolicy();
+    setOrgPolicy(policy);
+  }
+
   async function handleSyncSave() {
     await daemonClient.configureSync({ endpointUrl: syncEndpoint, token: syncToken, stripPaths: syncStripPaths });
     const status = await daemonClient.getSyncStatus();
@@ -457,7 +498,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
           <p className="muted">
             Pick a project, agent, and profile. Review capability warnings and preflight diagnostics before launch.
           </p>
-          <p className="muted">Mock API names for Task 3 sync: {Object.values(TASK3_API_NAMES).join(", ")}</p>
         </section>
 
         <div className="columns">
@@ -613,6 +653,39 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                   {syncStatus.lastError ? ` · Error: ${syncStatus.lastError}` : ""}
                 </div>
               ) : null}
+            </section>
+
+            <section className="panel">
+              <h2>Org Policy</h2>
+              <p className="muted">
+                Point Rampart at a remote org policy URL. The policy floor is fetched and merged with the local profile at preflight time.
+              </p>
+              <label className="field-label">
+                Policy URL
+                <input
+                  className="field-input"
+                  type="text"
+                  placeholder="https://your-org/api/v1/policy.json"
+                  value={orgPolicyUrl}
+                  onChange={(e) => setOrgPolicyUrl(e.target.value)}
+                />
+              </label>
+              <div className="action-row">
+                <button className="secondary-button" type="button" onClick={() => { void handleOrgPolicySave(); }}>
+                  Save URL
+                </button>
+                <button className="secondary-button" type="button" onClick={() => { void handleOrgPolicyFetch(); }}>
+                  Fetch policy
+                </button>
+              </div>
+              {orgPolicy ? (
+                <div className="muted">
+                  Active: {orgPolicy.name}
+                  {orgPolicy.description ? ` — ${orgPolicy.description}` : ""}
+                </div>
+              ) : (
+                <div className="muted">No org policy active.</div>
+              )}
             </section>
 
             <section className="panel">

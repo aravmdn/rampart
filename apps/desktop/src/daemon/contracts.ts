@@ -58,15 +58,6 @@ export type OrgPolicy = {
   } | null;
 };
 
-export const TASK3_API_NAMES = {
-  loadLaunchContext: "load_launch_context",
-  saveSelectedLaunchConfig: "save_selected_launch_config",
-  launchSession: "launch_session",
-  stopSession: "stop_session",
-  streamSessionEvents: "stream_session_events",
-  listSessionHistory: "list_session_history",
-} as const;
-
 export type PlatformKey = "windows" | "macos" | "linux";
 
 export type CapabilityStatus = "supported" | "unsupported" | "partial";
