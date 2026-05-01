@@ -436,6 +436,29 @@ impl Profile {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct OrgPolicyScope {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_types: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_path_glob: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct OrgPolicy {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<OrgPolicyScope>,
+    pub policy: Policy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<ProfileSignature>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CompiledFilesystemPolicy {
     #[serde(default)]
@@ -1147,6 +1170,192 @@ pub fn desktop_profile_presets(project_root: &str) -> Vec<Profile> {
     ]
 }
 
+/// Decide whether an `OrgPolicy` applies to a given (agent_type, project_path) pair.
+///
+/// - If `org.scope` is None → applies to everything → return true.
+/// - If `scope.agent_types` is Some, the agent_type must be in the list (case-sensitive).
+///   If None → no agent restriction.
+/// - If `scope.project_path_glob` is Some, match using fnmatch-style glob: `*` (any chars
+///   except path separator), `**` (any chars including separators), `?` (single char).
+///   Path separators are `/` and `\` (both treated as separators). Comparison is
+///   case-insensitive on Windows for simplicity.
+/// - All present scope fields must match (AND logic).
+pub fn org_policy_applies(org: &OrgPolicy, agent_type: &str, project_path: &str) -> bool {
+    let scope = match &org.scope {
+        None => return true,
+        Some(s) => s,
+    };
+
+    if let Some(agent_types) = &scope.agent_types {
+        if !agent_types.contains(&agent_type.to_string()) {
+            return false;
+        }
+    }
+
+    if let Some(glob) = &scope.project_path_glob {
+        if !glob_match(glob, project_path) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Simple fnmatch-style glob matching supporting `*`, `**`, and `?`.
+/// - `*` matches any characters except path separators (`/` and `\`)
+/// - `**` matches any characters including path separators
+/// - `?` matches exactly one character
+/// - Comparison is case-insensitive (both pattern and input are lowercased)
+fn glob_match(pattern: &str, input: &str) -> bool {
+    glob_match_recursive(pattern, input, 0, 0)
+}
+
+fn glob_match_recursive(pattern: &str, input: &str, p_idx: usize, i_idx: usize) -> bool {
+    let pattern_chars: Vec<char> = pattern.to_lowercase().chars().collect();
+    let input_chars: Vec<char> = input.to_lowercase().chars().collect();
+
+    if p_idx == pattern_chars.len() {
+        return i_idx == input_chars.len();
+    }
+
+    if p_idx < pattern_chars.len() && pattern_chars[p_idx] == '*' {
+        if p_idx + 1 < pattern_chars.len() && pattern_chars[p_idx + 1] == '*' {
+            for j in i_idx..=input_chars.len() {
+                if glob_match_recursive(pattern, input, p_idx + 2, j) {
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            for j in i_idx..=input_chars.len() {
+                if j < input_chars.len() && (input_chars[j] == '/' || input_chars[j] == '\\') {
+                    break;
+                }
+                if glob_match_recursive(pattern, input, p_idx + 1, j) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    if i_idx >= input_chars.len() {
+        return false;
+    }
+
+    if pattern_chars[p_idx] == '?' {
+        return glob_match_recursive(pattern, input, p_idx + 1, i_idx + 1);
+    }
+
+    if pattern_chars[p_idx] == input_chars[i_idx] {
+        return glob_match_recursive(pattern, input, p_idx + 1, i_idx + 1);
+    }
+
+    false
+}
+
+/// Merge `local` and `org` into a single `Profile` applying the most-restrictive-wins rule.
+///
+/// - `DefaultAction`: `Deny` dominates `Allow` for both network and process.
+/// - Allow-lists (`readable_roots`, `writable_roots`, `allowed_hosts`, `allowed_commands`):
+///   intersection — org floor narrows local, never widens.
+/// - Deny-lists (`blocked_roots`, `blocked_hosts`, `blocked_commands`):
+///   union — either side blocking makes it blocked.
+///
+/// The returned `Profile` clones `id`, `name`, `description`, `extends`, and `signature`
+/// from `local`. `scope` on `OrgPolicy` is not consulted here; the caller is responsible
+/// for determining that the org policy applies before calling this function.
+pub fn resolve_effective_policy(local: &Profile, org: &OrgPolicy) -> Profile {
+    let merged_fs = merge_filesystem(&local.policy.filesystem, &org.policy.filesystem);
+    let merged_net = merge_network(&local.policy.network, &org.policy.network);
+    let merged_proc = merge_process(&local.policy.process, &org.policy.process);
+
+    Profile {
+        id: local.id.clone(),
+        name: local.name.clone(),
+        description: local.description.clone(),
+        extends: local.extends.clone(),
+        signature: local.signature.clone(),
+        policy: Policy {
+            filesystem: merged_fs,
+            network: merged_net,
+            process: merged_proc,
+        },
+    }
+}
+
+fn merge_filesystem(local: &FilesystemPolicy, org: &FilesystemPolicy) -> FilesystemPolicy {
+    FilesystemPolicy {
+        readable_roots: intersect_lists(&local.readable_roots, &org.readable_roots),
+        writable_roots: intersect_lists(&local.writable_roots, &org.writable_roots),
+        blocked_roots: union_lists(&local.blocked_roots, &org.blocked_roots),
+    }
+}
+
+fn merge_network(local: &NetworkPolicy, org: &NetworkPolicy) -> NetworkPolicy {
+    NetworkPolicy {
+        default_action: stricter_default(local.default_action, org.default_action),
+        allowed_hosts: intersect_lists(&local.allowed_hosts, &org.allowed_hosts),
+        blocked_hosts: union_lists(&local.blocked_hosts, &org.blocked_hosts),
+    }
+}
+
+fn merge_process(local: &ProcessPolicy, org: &ProcessPolicy) -> ProcessPolicy {
+    ProcessPolicy {
+        default_action: stricter_default(local.default_action, org.default_action),
+        allowed_commands: intersect_lists(&local.allowed_commands, &org.allowed_commands),
+        blocked_commands: union_lists(&local.blocked_commands, &org.blocked_commands),
+    }
+}
+
+/// `Deny` strictly dominates `Allow`. Returns `Deny` if either side is `Deny`.
+fn stricter_default(a: DefaultAction, b: DefaultAction) -> DefaultAction {
+    if matches!(a, DefaultAction::Deny) || matches!(b, DefaultAction::Deny) {
+        DefaultAction::Deny
+    } else {
+        DefaultAction::Allow
+    }
+}
+
+/// Intersection of two allow-lists. If either list is empty the intersection is empty,
+/// because an empty org allow-list means "nothing is permitted" — the org floor allows
+/// nothing and that is strictly more restrictive than any non-empty local allow-list.
+///
+/// Exception: if the org list is empty AND the local list is non-empty, the org has not
+/// configured any restriction on this dimension (it is absent/unconstrained). In that
+/// case we preserve the local list. An org "floor" only constrains when it actually
+/// specifies entries.
+///
+/// Concretely:
+/// - org empty, local non-empty → local (org has no opinion; leave local alone)
+/// - org non-empty, local empty → empty (org allows some things; local allows none — intersection is ∅)
+/// - both non-empty → set intersection
+/// - both empty → empty
+fn intersect_lists(local: &[String], org: &[String]) -> Vec<String> {
+    if org.is_empty() {
+        return local.to_vec();
+    }
+    let org_set: BTreeSet<&str> = org.iter().map(|s| s.as_str()).collect();
+    local
+        .iter()
+        .filter(|s| org_set.contains(s.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Union of two deny-lists. Preserves insertion order of local first, then any org
+/// entries not already present.
+fn union_lists(local: &[String], org: &[String]) -> Vec<String> {
+    let mut result = local.to_vec();
+    let local_set: BTreeSet<&str> = local.iter().map(|s| s.as_str()).collect();
+    for entry in org {
+        if !local_set.contains(entry.as_str()) {
+            result.push(entry.clone());
+        }
+    }
+    result
+}
+
 fn finish(errors: ValidationErrors) -> Result<(), ValidationErrors> {
     if errors.is_empty() {
         Ok(())
@@ -1226,5 +1435,346 @@ fn require_support(
 ) {
     if matches!(support, CapabilitySupport::Unsupported) {
         errors.push(ValidationErrorCode::UnsupportedCapability, field, message);
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    fn make_org(policy: Policy) -> OrgPolicy {
+        OrgPolicy {
+            id: "org-floor".into(),
+            name: "Org Floor".into(),
+            description: None,
+            scope: None,
+            policy,
+            signature: None,
+        }
+    }
+
+    fn make_local(policy: Policy) -> Profile {
+        Profile {
+            id: "local-profile".into(),
+            name: "Local Profile".into(),
+            description: None,
+            extends: None,
+            policy,
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn org_deny_default_dominates_local_allow() {
+        let local = make_local(Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Allow,
+                allowed_hosts: vec![],
+                blocked_hosts: vec![],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Allow,
+                allowed_commands: vec![],
+                blocked_commands: vec![],
+            },
+            filesystem: FilesystemPolicy::default(),
+        });
+        let org = make_org(Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_hosts: vec![],
+                blocked_hosts: vec![],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_commands: vec![],
+                blocked_commands: vec![],
+            },
+            filesystem: FilesystemPolicy::default(),
+        });
+        let merged = resolve_effective_policy(&local, &org);
+        assert_eq!(merged.policy.network.default_action, DefaultAction::Deny);
+        assert_eq!(merged.policy.process.default_action, DefaultAction::Deny);
+    }
+
+    #[test]
+    fn allow_list_intersection_narrows_correctly() {
+        let local = make_local(Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_hosts: vec!["api.example.com".into(), "cdn.example.com".into()],
+                blocked_hosts: vec![],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_commands: vec!["git".into(), "node".into(), "npm".into()],
+                blocked_commands: vec![],
+            },
+            filesystem: FilesystemPolicy {
+                readable_roots: vec![r"C:\project".into(), r"C:\home".into()],
+                writable_roots: vec![r"C:\project".into(), r"C:\tmp".into()],
+                blocked_roots: vec![],
+            },
+        });
+        let org = make_org(Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_hosts: vec!["api.example.com".into()],
+                blocked_hosts: vec![],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_commands: vec!["git".into(), "node".into()],
+                blocked_commands: vec![],
+            },
+            filesystem: FilesystemPolicy {
+                readable_roots: vec![r"C:\project".into()],
+                writable_roots: vec![r"C:\project".into()],
+                blocked_roots: vec![],
+            },
+        });
+        let merged = resolve_effective_policy(&local, &org);
+        assert_eq!(merged.policy.network.allowed_hosts, vec!["api.example.com"]);
+        assert_eq!(
+            merged.policy.process.allowed_commands,
+            vec!["git".to_string(), "node".to_string()]
+        );
+        assert_eq!(merged.policy.filesystem.readable_roots, vec![r"C:\project"]);
+        assert_eq!(merged.policy.filesystem.writable_roots, vec![r"C:\project"]);
+    }
+
+    #[test]
+    fn deny_list_union_broadens_correctly() {
+        let local = make_local(Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_hosts: vec![],
+                blocked_hosts: vec!["malware.example.com".into()],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_commands: vec![],
+                blocked_commands: vec!["powershell".into()],
+            },
+            filesystem: FilesystemPolicy {
+                readable_roots: vec![],
+                writable_roots: vec![],
+                blocked_roots: vec![r"C:\Users".into()],
+            },
+        });
+        let org = make_org(Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_hosts: vec![],
+                blocked_hosts: vec!["phishing.example.com".into()],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Deny,
+                allowed_commands: vec![],
+                blocked_commands: vec!["cmd".into()],
+            },
+            filesystem: FilesystemPolicy {
+                readable_roots: vec![],
+                writable_roots: vec![],
+                blocked_roots: vec![r"C:\Windows".into()],
+            },
+        });
+        let merged = resolve_effective_policy(&local, &org);
+        assert!(merged
+            .policy
+            .network
+            .blocked_hosts
+            .contains(&"malware.example.com".to_string()));
+        assert!(merged
+            .policy
+            .network
+            .blocked_hosts
+            .contains(&"phishing.example.com".to_string()));
+        assert!(merged
+            .policy
+            .process
+            .blocked_commands
+            .contains(&"powershell".to_string()));
+        assert!(merged
+            .policy
+            .process
+            .blocked_commands
+            .contains(&"cmd".to_string()));
+        assert!(merged
+            .policy
+            .filesystem
+            .blocked_roots
+            .contains(&r"C:\Users".to_string()));
+        assert!(merged
+            .policy
+            .filesystem
+            .blocked_roots
+            .contains(&r"C:\Windows".to_string()));
+    }
+
+    #[test]
+    fn empty_org_policy_leaves_local_unchanged() {
+        let local_policy = Policy {
+            network: NetworkPolicy {
+                default_action: DefaultAction::Allow,
+                allowed_hosts: vec!["api.example.com".into()],
+                blocked_hosts: vec!["bad.example.com".into()],
+            },
+            process: ProcessPolicy {
+                default_action: DefaultAction::Allow,
+                allowed_commands: vec!["git".into()],
+                blocked_commands: vec!["powershell".into()],
+            },
+            filesystem: FilesystemPolicy {
+                readable_roots: vec![r"C:\project".into()],
+                writable_roots: vec![r"C:\project\out".into()],
+                blocked_roots: vec![r"C:\secret".into()],
+            },
+        };
+        let local = make_local(local_policy.clone());
+        let org = make_org(Policy::default());
+        let merged = resolve_effective_policy(&local, &org);
+        assert_eq!(merged.policy, local_policy);
+        assert_eq!(merged.id, "local-profile");
+        assert_eq!(merged.name, "Local Profile");
+    }
+
+    #[test]
+    fn metadata_cloned_from_local() {
+        let local = Profile {
+            id: "my-id".into(),
+            name: "My Name".into(),
+            description: Some("desc".into()),
+            extends: Some("parent".into()),
+            policy: Policy::default(),
+            signature: None,
+        };
+        let org = make_org(Policy::default());
+        let merged = resolve_effective_policy(&local, &org);
+        assert_eq!(merged.id, "my-id");
+        assert_eq!(merged.name, "My Name");
+        assert_eq!(merged.description.as_deref(), Some("desc"));
+        assert_eq!(merged.extends.as_deref(), Some("parent"));
+    }
+}
+
+#[cfg(test)]
+mod org_scope_tests {
+    use super::*;
+
+    fn make_org_with_scope(scope: Option<OrgPolicyScope>) -> OrgPolicy {
+        OrgPolicy {
+            id: "org-policy".into(),
+            name: "Org Policy".into(),
+            description: None,
+            scope,
+            policy: Policy::default(),
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn scope_none_applies_to_everything() {
+        let org = make_org_with_scope(None);
+        assert!(org_policy_applies(&org, "claude-code", "C:\\project\\foo"));
+        assert!(org_policy_applies(&org, "codex", "/home/user/project"));
+        assert!(org_policy_applies(&org, "any-agent", ""));
+    }
+
+    #[test]
+    fn agent_types_restriction_matches() {
+        let scope = OrgPolicyScope {
+            agent_types: Some(vec!["claude-code".into(), "aider".into()]),
+            project_path_glob: None,
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "claude-code", "C:\\project"));
+        assert!(org_policy_applies(&org, "aider", "C:\\project"));
+        assert!(!org_policy_applies(&org, "codex", "C:\\project"));
+        assert!(!org_policy_applies(&org, "Claude-Code", "C:\\project"));
+    }
+
+    #[test]
+    fn agent_types_none_means_no_restriction() {
+        let scope = OrgPolicyScope {
+            agent_types: None,
+            project_path_glob: Some("**".into()),
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "claude-code", "C:\\project"));
+        assert!(org_policy_applies(&org, "codex", "C:\\project"));
+        assert!(org_policy_applies(&org, "any-agent", "C:\\project"));
+    }
+
+    #[test]
+    fn glob_star_matches_except_path_separators() {
+        let scope = OrgPolicyScope {
+            agent_types: None,
+            project_path_glob: Some("*.rs".into()),
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "any", "file.rs"));
+        assert!(org_policy_applies(&org, "any", "MAIN.RS"));
+        assert!(!org_policy_applies(&org, "any", "src/main.rs"));
+        assert!(!org_policy_applies(&org, "any", "src\\main.rs"));
+    }
+
+    #[test]
+    fn glob_double_star_matches_including_path_separators() {
+        let scope = OrgPolicyScope {
+            agent_types: None,
+            project_path_glob: Some("**/foo/**".into()),
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "any", "C:\\work\\foo\\bar"));
+        assert!(org_policy_applies(&org, "any", "c:\\work\\foo\\bar"));
+        assert!(org_policy_applies(&org, "any", "/home/work/foo/bar"));
+        assert!(org_policy_applies(&org, "any", "/foo/bar"));
+        assert!(org_policy_applies(&org, "any", "foo/bar"));
+        assert!(!org_policy_applies(&org, "any", "C:\\work\\foobar"));
+    }
+
+    #[test]
+    fn glob_question_mark_single_char() {
+        let scope = OrgPolicyScope {
+            agent_types: None,
+            project_path_glob: Some("test?.rs".into()),
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "any", "test1.rs"));
+        assert!(org_policy_applies(&org, "any", "testa.rs"));
+        assert!(!org_policy_applies(&org, "any", "test.rs"));
+        assert!(!org_policy_applies(&org, "any", "test12.rs"));
+    }
+
+    #[test]
+    fn combined_scope_both_must_match() {
+        let scope = OrgPolicyScope {
+            agent_types: Some(vec!["claude-code".into()]),
+            project_path_glob: Some("**/secure/**".into()),
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "claude-code", "C:\\secure\\project"));
+        assert!(!org_policy_applies(&org, "codex", "C:\\secure\\project"));
+        assert!(!org_policy_applies(&org, "claude-code", "C:\\public\\project"));
+    }
+
+    #[test]
+    fn glob_case_insensitive_matching() {
+        let scope = OrgPolicyScope {
+            agent_types: None,
+            project_path_glob: Some("**/FOO/**".into()),
+        };
+        let org = make_org_with_scope(Some(scope));
+
+        assert!(org_policy_applies(&org, "any", "C:\\Work\\foo\\bar"));
+        assert!(org_policy_applies(&org, "any", "C:\\WORK\\FOO\\BAR"));
+        assert!(org_policy_applies(&org, "any", "/work/FoO/bar"));
     }
 }
