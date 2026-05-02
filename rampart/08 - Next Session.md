@@ -1,23 +1,28 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #14 — IsolationMode + SignatureStatus exhaustiveness tests)
+last updated: 2026-05-02 (scheduled routine #15 — doc drift audit)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #14)
+## where we left off (2026-05-02, scheduled routine #15)
 
-Routine #14 closed the two remaining union-type coverage gaps in `tauriDaemonClient.test.ts`:
+Routine #15 was a doc drift audit — no code changes; documentation only.
 
-- **IsolationMode "wsl2"**: `launchSession` with `isolationMode: "wsl2"` — verified the value passes through to invoke unchanged.
-- **SignatureStatus "invalid"**: `loadProfile` with `signature_status: "invalid"` — verified the snake_case field maps to `signatureStatus: "invalid"` correctly.
+**What was found and fixed:**
+- `docs/architecture.md` Phase 5 section was missing the per-agent capability matrix entry
+  (Cursor, Copilot, Goose, OpenCode, GeminiCli standard+strict presets; 12 Rust tests).
+  Added explicit Phase 5 paragraph covering all 8 agents and the 12 new tests.
+- `docs/architecture.md` Phase 2 entry only mentioned ClaudeCode/Codex/Aider for
+  `agent_profile_presets()` — added a cross-ref to Phase 5 to avoid confusion.
+- `README.md` agent list references were incomplete (missing Cursor, Copilot, GeminiCli):
+  - Overview paragraph updated: "Claude Code, Codex, or Cursor"
+  - Expected workflow step 3 updated: full 8-agent list
 
-All 33 TypeScript tests pass. Committed + pushed to main.
+**No code changes. All 33 TypeScript tests still pass.**
 
-Audit finding: `mockDaemonClient.ts` signatures all match `DaemonApi` exactly — no divergence. TypeScript interface enforcement keeps this in sync automatically.
-
-Previous routine (#12): cancel path + policy refinement integration tests in App.test.tsx.
+Previous routine (#14): IsolationMode + SignatureStatus exhaustiveness test coverage.
 
 ---
 
@@ -31,6 +36,7 @@ Previous routine (#12): cancel path + policy refinement integration tests in App
   - ✓ Mapping layer: 25 unit tests + 5 App integration tests = 33 total. All DaemonApi methods, all union variants covered.
   - ✓ Per-agent capability matrices: all 8 AgentTool variants have tailored presets.
   - ✓ mockDaemonClient.ts audited: all method signatures match DaemonApi interface exactly.
+  - ✓ Docs: architecture.md + README.md fully reflect Phase 5 agent expansion.
   - Pending: WFP monitor privilege validation (requires interactive session).
   - Pending: CLI runtime validation (requires VS Dev Shell).
   - Deferred: AppContainer isolation mode.
@@ -39,15 +45,14 @@ Previous routine (#12): cancel path + policy refinement integration tests in App
 
 ## next tasks (priority order)
 
-**0. [routine-only] No schedulable TypeScript test gaps remain**
+**0. [routine-only] Doc audit complete; no further schedulable doc work identified**
 
-The mapping-layer tests are now fully exhaustive:
-- All 17 DaemonApi methods tested
-- All union-type variants tested: `IsolationMode` (windows-native, wsl2), `SignatureStatus` (unsigned, valid, invalid)
-- All first-class product flows covered in App integration tests (5 tests)
-- mockDaemonClient.ts verified against real client
+All public docs (README, AGENTS, architecture, roadmap, threat-model) are now consistent
+with the current implementation. vault notes 02, 06, 07, 08 are current.
 
-No further TypeScript test work is schedulable. Routines dispatched going forward should focus on doc drift, architecture review, or code audit tasks.
+Routines going forward should:
+- Audit for any new doc drift as code evolves
+- OR perform a code-quality sweep (unused imports, dead code, mismatched field names)
 
 **1. WFP monitor privilege validation** (MUST be done in interactive session — NOT schedulable)
 
