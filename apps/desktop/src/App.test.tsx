@@ -307,4 +307,131 @@ describe("desktop shell", () => {
     expect(await screen.findByText("Recent History")).toBeInTheDocument();
     expect(screen.queryByText("Edit profile")).not.toBeInTheDocument();
   });
+
+  it("cancels profile editor without saving and returns to launcher", async () => {
+    const mockProfile = {
+      id: "claude-code.standard",
+      displayName: "Claude Code Standard",
+      detail: "Standard profile.",
+      filesystem: { readableRoots: ["C:\\projects\\test"], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny" as const, allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "deny" as const, allowedCommands: [], blockedCommands: [] },
+      signatureStatus: "unsigned" as const,
+    };
+
+    const client: DaemonApi = {
+      loadLaunchContext: vi.fn().mockResolvedValue({
+        projects: [{ id: "proj-1", label: "Project", path: "C:\\projects\\test", source: "detected" }],
+        agents: [{ id: "claude-code", label: "Claude Code", detail: "Anthropic agent.", terminalFirst: false }],
+        profiles: [{ id: "claude-code.standard", displayName: "Claude Code Standard", detail: "Standard profile.", signatureStatus: "unsigned" as const }],
+        selected: { projectPath: "C:\\projects\\test", agentId: "claude-code", profileId: "claude-code.standard" },
+        capabilities: { engineName: "mock", platform: "windows", capabilities: [] },
+      }),
+      saveSelectedLaunchConfig: vi.fn().mockResolvedValue(undefined),
+      preflightCheck: vi.fn().mockResolvedValue({ ready: true, diagnostics: [] }),
+      launchSession: vi.fn().mockResolvedValue({ id: "s1", status: "active", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
+      stopSession: vi.fn().mockResolvedValue({ id: "s1", status: "stopped", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
+      streamSessionEvents: vi.fn().mockResolvedValue({ audit: [], violations: [] }),
+      loadProfile: vi.fn().mockResolvedValue(mockProfile),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
+      signProfile: vi.fn().mockResolvedValue(undefined),
+      loadRemoteProfile: vi.fn().mockResolvedValue(null),
+      configureSync: vi.fn().mockResolvedValue(undefined),
+      getSyncStatus: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      syncAuditEvents: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      configureOrgPolicyUrl: vi.fn().mockResolvedValue(undefined),
+      fetchOrgPolicy: vi.fn().mockResolvedValue(null),
+      currentOrgPolicy: vi.fn().mockResolvedValue(null),
+      listSessionHistory: vi.fn().mockResolvedValue([]),
+    };
+
+    render(<App daemonClient={client} />);
+
+    // Open editor from launcher
+    expect(await screen.findByText("Claude Code Standard")).toBeInTheDocument();
+    const editBtn = await screen.findByRole("button", { name: "Edit selected profile" });
+    fireEvent.click(editBtn);
+
+    expect(await screen.findByText("Edit profile")).toBeInTheDocument();
+
+    // Cancel without saving
+    const cancelBtn = await screen.findByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelBtn);
+
+    // Returned to launcher; saveProfile never called
+    expect(await screen.findByText("Recent History")).toBeInTheDocument();
+    expect(screen.queryByText("Edit profile")).not.toBeInTheDocument();
+    expect(client.saveProfile).not.toHaveBeenCalled();
+  });
+
+  it("policy refinement: Adjust policy on violation opens editor pre-populated with suggestion", async () => {
+    const mockProfile = {
+      id: "claude-code.standard",
+      displayName: "Claude Code Standard",
+      detail: "Standard profile.",
+      filesystem: { readableRoots: ["C:\\projects\\test"], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny" as const, allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "deny" as const, allowedCommands: [], blockedCommands: [] },
+      signatureStatus: "unsigned" as const,
+    };
+
+    const client: DaemonApi = {
+      loadLaunchContext: vi.fn().mockResolvedValue({
+        projects: [{ id: "proj-1", label: "Project", path: "C:\\projects\\test", source: "detected" }],
+        agents: [{ id: "claude-code", label: "Claude Code", detail: "Anthropic agent.", terminalFirst: false }],
+        profiles: [{ id: "claude-code.standard", displayName: "Claude Code Standard", detail: "Standard profile.", signatureStatus: "unsigned" as const }],
+        selected: { projectPath: "C:\\projects\\test", agentId: "claude-code", profileId: "claude-code.standard" },
+        capabilities: { engineName: "mock", platform: "windows", capabilities: [] },
+      }),
+      saveSelectedLaunchConfig: vi.fn().mockResolvedValue(undefined),
+      preflightCheck: vi.fn().mockResolvedValue({ ready: true, diagnostics: [] }),
+      launchSession: vi.fn().mockResolvedValue({ id: "s1", status: "active", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
+      stopSession: vi.fn().mockResolvedValue({ id: "s1", status: "stopped", profileId: "claude-code.standard", agentId: "claude-code", projectPath: "C:\\projects\\test" }),
+      streamSessionEvents: vi.fn().mockResolvedValue({
+        audit: [],
+        violations: [
+          {
+            id: "v-read-1",
+            operation: "read",
+            target: "C:\\Users\\dev\\secrets.txt",
+            ruleId: "fs.scope.blocked",
+            message: "Read blocked outside project root.",
+          },
+        ],
+      }),
+      loadProfile: vi.fn().mockResolvedValue(mockProfile),
+      saveProfile: vi.fn().mockResolvedValue(undefined),
+      signProfile: vi.fn().mockResolvedValue(undefined),
+      loadRemoteProfile: vi.fn().mockResolvedValue(null),
+      configureSync: vi.fn().mockResolvedValue(undefined),
+      getSyncStatus: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      syncAuditEvents: vi.fn().mockResolvedValue({ configured: false, queueDepth: 0 }),
+      configureOrgPolicyUrl: vi.fn().mockResolvedValue(undefined),
+      fetchOrgPolicy: vi.fn().mockResolvedValue(null),
+      currentOrgPolicy: vi.fn().mockResolvedValue(null),
+      listSessionHistory: vi.fn().mockResolvedValue([]),
+    };
+
+    render(<App daemonClient={client} />);
+
+    // Launch a session
+    const launchBtn = await screen.findByRole("button", { name: "Launch session" });
+    fireEvent.click(launchBtn);
+
+    // Wait for violation to appear in session console (polled via streamSessionEvents)
+    const adjustBtn = await screen.findByRole("button", { name: "Adjust policy" }, { timeout: 5000 });
+    fireEvent.click(adjustBtn);
+
+    // Profile editor opens; loadProfile called with the active profile ID
+    expect(await screen.findByText("Edit profile")).toBeInTheDocument();
+    expect(client.loadProfile).toHaveBeenCalledWith("claude-code.standard");
+
+    // Cancel returns to session view
+    const cancelBtn = await screen.findByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelBtn);
+
+    expect(screen.queryByText("Edit profile")).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop session" })).toBeInTheDocument();
+    expect(client.saveProfile).not.toHaveBeenCalled();
+  });
 });
