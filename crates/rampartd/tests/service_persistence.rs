@@ -1,5 +1,5 @@
 use engine_greywall::{GreywallAdapter, GreywallVersion, RawEngineEventKind};
-use policy_core::{AgentTool, AuditEventKind};
+use policy_core::{AuditEventKind, IsolationMode};
 use rampartd::{
     LaunchSessionRequest, LocalDataStore, RampartService, SelectedLaunchConfig, ServiceQueryApi,
 };
@@ -80,8 +80,9 @@ fn session_history_persists_stop_and_blocked_events() {
     let session = service
         .launch_session(LaunchSessionRequest {
             project_dir: current_repo_root(),
-            agent_tool: AgentTool::Codex,
+            agent_id: "codex".into(),
             profile_id: "windows-safe".into(),
+            isolation_mode: IsolationMode::WindowsNative,
         })
         .expect("launch should succeed");
 

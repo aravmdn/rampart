@@ -1,6 +1,6 @@
 use engine_greywall::{GreywallAdapter, GreywallVersion};
 use policy_core::{
-    AgentTool, DefaultAction, FilesystemPolicy, NetworkPolicy, Policy, ProcessPolicy, Profile,
+    DefaultAction, FilesystemPolicy, IsolationMode, NetworkPolicy, Policy, ProcessPolicy, Profile,
 };
 use rampartd::{DaemonApi, LaunchSessionRequest, RampartDaemon};
 use std::path::PathBuf;
@@ -59,8 +59,9 @@ fn launches_with_agent_project_and_profile_only() {
     let session = daemon
         .launch_session(LaunchSessionRequest {
             project_dir: r"C:\projects\rampart".into(),
-            agent_tool: AgentTool::Codex,
+            agent_id: "codex".into(),
             profile_id: "windows-safe".into(),
+            isolation_mode: IsolationMode::WindowsNative,
         })
         .expect("launch should work");
 

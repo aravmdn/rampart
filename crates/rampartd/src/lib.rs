@@ -1674,6 +1674,11 @@ where
             policy_core::AgentTool::ClaudeCode,
             policy_core::AgentTool::Codex,
             policy_core::AgentTool::Aider,
+            policy_core::AgentTool::Cursor,
+            policy_core::AgentTool::Copilot,
+            policy_core::AgentTool::Goose,
+            policy_core::AgentTool::OpenCode,
+            policy_core::AgentTool::GeminiCli,
         ] {
             for preset in policy_core::agent_profile_presets(tool, &project_root) {
                 if preset.id == profile_id {
@@ -1866,6 +1871,11 @@ pub fn default_profiles() -> Vec<Profile> {
         AgentTool::ClaudeCode,
         AgentTool::Codex,
         AgentTool::Aider,
+        AgentTool::Cursor,
+        AgentTool::Copilot,
+        AgentTool::Goose,
+        AgentTool::OpenCode,
+        AgentTool::GeminiCli,
     ] {
         all.extend(policy_core::agent_profile_presets(tool, &root));
     }

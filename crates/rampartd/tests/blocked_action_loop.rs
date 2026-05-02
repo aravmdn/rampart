@@ -1,6 +1,6 @@
 use engine_greywall::{GreywallAdapter, GreywallVersion, RawEngineEventKind};
 use policy_core::{
-    AgentTool, AuditEventKind, DefaultAction, FilesystemPolicy, NetworkPolicy, Policy,
+    AuditEventKind, DefaultAction, FilesystemPolicy, IsolationMode, NetworkPolicy, Policy,
     ProcessPolicy, Profile,
 };
 use rampartd::{DaemonApi, LaunchSessionRequest, RampartDaemon, SessionEventRecord};
@@ -48,8 +48,9 @@ fn blocked_action_loop_records_launch_then_normalized_blocked_read() {
     let session = daemon
         .launch_session(LaunchSessionRequest {
             project_dir: r"C:\projects\rampart".into(),
-            agent_tool: AgentTool::Codex,
+            agent_id: "codex".into(),
             profile_id: "windows-safe".into(),
+            isolation_mode: IsolationMode::WindowsNative,
         })
         .expect("launch should work");
 
