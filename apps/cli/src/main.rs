@@ -31,7 +31,7 @@ type ActiveEngine = GreywallAdapter;
 fn usage() -> ! {
     eprintln!("Usage: rampart run --agent <id> --profile <id> --project <path> [--wsl2]");
     eprintln!();
-    eprintln!("  --agent   Agent ID (claude-code, codex, aider, goose, opencode, gemini, cursor)");
+    eprintln!("  --agent   Agent ID (claude-code, codex, aider, goose, opencode, gemini, cursor, copilot)");
     eprintln!("  --profile Profile ID from the preset list (use --list-profiles to see options)");
     eprintln!("  --project Absolute path to the project directory to protect");
     eprintln!("  --wsl2    Run agent inside WSL2 (stronger isolation; requires WSL2 installed)");
