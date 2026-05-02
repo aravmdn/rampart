@@ -98,8 +98,8 @@ Reference-informed next steps inside those phases:
 - Phase 5 (in progress):
   - ✓ Headless CLI: `apps/cli/` binary (`rampart run` + `rampart list-profiles`); full enforcement via RampartService; JSONL event stream to stdout; clean Ctrl+C shutdown
   - ✓ WFP violation streaming: `FwpmNetEventSubscribe0` subscription surfaces blocked connections in session console; events drained at stop_session; Medium-integrity privilege pending runtime validation
+  - ✓ Per-agent capability matrices: Cursor, Copilot, Goose, OpenCode, GeminiCli presets in `agent_profile_presets()`; standard (API-allowed) + strict (network-denied) profiles for each; 12 Rust tests in `preset_tests` module
   - AppContainer isolation mode (seam preserved in engine adapter layer; deferred)
-  - Per-agent capability matrices
   - Enterprise controls where justified
 
 ## Cross-domain workflows

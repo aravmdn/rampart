@@ -87,7 +87,7 @@ Reference-driven priorities inside this phase:
 
 - ✓ **Headless `rampart run` CLI**: `apps/cli/` binary reuses `RampartService` for full enforcement. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` — preflight to stderr, JSONL events to stdout, clean Ctrl+C shutdown. `rampart list-profiles` enumerates agent-specific presets.
 - ✓ **WFP violation streaming**: `FwpmNetEventSubscribe0` subscription surfaces blocked connections in the session console while a session is live; events are drained and persisted at `stop_session`. (Medium-integrity privilege validation pending runtime test.)
-- Per-agent capability matrices and compatibility checks
+- ✓ **Per-agent capability matrices**: `agent_profile_presets()` in policy-core now returns tailored standard+strict profiles for Cursor, Copilot, Goose, OpenCode, and GeminiCli in addition to ClaudeCode/Codex/Aider. Each standard profile allows the agent's known API endpoints; strict profiles deny network entirely. 12 Rust unit tests added.
 - AppContainer isolation mode for stronger process-level sandboxing
 - Enterprise controls where justified
 

@@ -169,7 +169,7 @@ One known limitation in Windows Native mode: enforcement fires at the OS level b
 | Violation event streaming in Windows Native mode | 5 | Open — blocks fire at OS level but don't surface in session console; WSL2 mode surfaces events |
 | WFP event monitor privilege | 5 | Open — unknown whether `FwpmNetEventSubscribe0` works at Medium integrity; degrades silently on failure |
 | AppContainer isolation mode | 5 | Deferred — seam preserved in engine adapter layer |
-| Per-agent capability matrices | 5 | Not started |
+| Per-agent capability matrices | 5 | **Complete** — Cursor, Copilot, Goose, OpenCode, GeminiCli standard+strict presets in `policy-core`; 12 unit tests |
 | Installer / packaging | — | Not started |
 
 ## Getting Started

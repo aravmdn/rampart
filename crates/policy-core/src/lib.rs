@@ -1111,6 +1111,321 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                 },
             },
         ],
+        AgentTool::Cursor => {
+            let cursor_config = format!("{user_profile}\\.cursor");
+            vec![
+                Profile {
+                    id: "cursor.standard".into(),
+                    name: "Cursor Standard".into(),
+                    description: Some(
+                        "Project read/write, Cursor config readable, Cursor/Anthropic/OpenAI APIs allowed.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), cursor_config.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![
+                                "cursor.sh".into(),
+                                "api2.cursor.sh".into(),
+                                "api.anthropic.com".into(),
+                                "api.openai.com".into(),
+                            ],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec![
+                                "git".into(),
+                                "node".into(),
+                                "npm".into(),
+                                "pnpm".into(),
+                            ],
+                            blocked_commands: vec!["powershell".into()],
+                        },
+                    },
+                },
+                Profile {
+                    id: "cursor.strict".into(),
+                    name: "Cursor Strict".into(),
+                    description: Some(
+                        "Project read/write only. Network denied. Only git permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), cursor_config],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec!["git".into()],
+                            blocked_commands: vec!["powershell".into(), "cmd".into()],
+                        },
+                    },
+                },
+            ]
+        }
+        AgentTool::Copilot => {
+            vec![
+                Profile {
+                    id: "copilot.standard".into(),
+                    name: "GitHub Copilot Standard".into(),
+                    description: Some(
+                        "Project read/write, GitHub and OpenAI APIs allowed. git and node permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![
+                                "api.github.com".into(),
+                                "copilot-proxy.githubusercontent.com".into(),
+                                "api.openai.com".into(),
+                            ],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec![
+                                "git".into(),
+                                "node".into(),
+                                "npm".into(),
+                            ],
+                            blocked_commands: vec!["powershell".into()],
+                        },
+                    },
+                },
+                Profile {
+                    id: "copilot.strict".into(),
+                    name: "GitHub Copilot Strict".into(),
+                    description: Some(
+                        "Project read/write only. Network denied. Only git permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec!["git".into()],
+                            blocked_commands: vec!["powershell".into(), "cmd".into()],
+                        },
+                    },
+                },
+            ]
+        }
+        AgentTool::Goose => {
+            let goose_config = format!("{user_profile}\\.config\\goose");
+            vec![
+                Profile {
+                    id: "goose.standard".into(),
+                    name: "Goose Standard".into(),
+                    description: Some(
+                        "Project read/write, Goose config readable, Anthropic and OpenAI APIs allowed.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), goose_config.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![
+                                "api.anthropic.com".into(),
+                                "api.openai.com".into(),
+                            ],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec![
+                                "git".into(),
+                                "python".into(),
+                                "python3".into(),
+                                "node".into(),
+                                "npm".into(),
+                            ],
+                            blocked_commands: vec!["powershell".into()],
+                        },
+                    },
+                },
+                Profile {
+                    id: "goose.strict".into(),
+                    name: "Goose Strict".into(),
+                    description: Some(
+                        "Project read/write only. Network denied. Only git permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), goose_config],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec!["git".into()],
+                            blocked_commands: vec!["powershell".into(), "cmd".into()],
+                        },
+                    },
+                },
+            ]
+        }
+        AgentTool::OpenCode => {
+            vec![
+                Profile {
+                    id: "opencode.standard".into(),
+                    name: "OpenCode Standard".into(),
+                    description: Some(
+                        "Project read/write, Anthropic and OpenAI APIs allowed. git and node permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![
+                                "api.anthropic.com".into(),
+                                "api.openai.com".into(),
+                            ],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec![
+                                "git".into(),
+                                "node".into(),
+                                "npm".into(),
+                                "pnpm".into(),
+                            ],
+                            blocked_commands: vec!["powershell".into()],
+                        },
+                    },
+                },
+                Profile {
+                    id: "opencode.strict".into(),
+                    name: "OpenCode Strict".into(),
+                    description: Some(
+                        "Project read/write only. Network denied. Only git permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec!["git".into()],
+                            blocked_commands: vec!["powershell".into(), "cmd".into()],
+                        },
+                    },
+                },
+            ]
+        }
+        AgentTool::GeminiCli => {
+            let gemini_config = format!("{user_profile}\\.gemini");
+            vec![
+                Profile {
+                    id: "gemini.standard".into(),
+                    name: "Gemini CLI Standard".into(),
+                    description: Some(
+                        "Project read/write, Gemini config readable, Google Generative AI API allowed.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), gemini_config.clone()],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![
+                                "generativelanguage.googleapis.com".into(),
+                                "aiplatform.googleapis.com".into(),
+                            ],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec![
+                                "git".into(),
+                                "node".into(),
+                                "npm".into(),
+                            ],
+                            blocked_commands: vec!["powershell".into()],
+                        },
+                    },
+                },
+                Profile {
+                    id: "gemini.strict".into(),
+                    name: "Gemini CLI Strict".into(),
+                    description: Some(
+                        "Project read/write only. Network denied. Only git permitted.".into(),
+                    ),
+                    extends: None,
+                    policy: Policy {
+                        filesystem: FilesystemPolicy {
+                            readable_roots: vec![normalized_root.clone(), gemini_config],
+                            writable_roots: vec![normalized_root.clone()],
+                            blocked_roots: vec![r"C:\Users".into(), r"C:\Windows".into()],
+                        },
+                        network: NetworkPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_hosts: vec![],
+                            blocked_hosts: vec![],
+                        },
+                        process: ProcessPolicy {
+                            default_action: DefaultAction::Deny,
+                            allowed_commands: vec!["git".into()],
+                            blocked_commands: vec!["powershell".into(), "cmd".into()],
+                        },
+                    },
+                },
+            ]
+        }
         _ => desktop_profile_presets(project_root),
     }
 }
@@ -1776,5 +2091,141 @@ mod org_scope_tests {
         assert!(org_policy_applies(&org, "any", "C:\\Work\\foo\\bar"));
         assert!(org_policy_applies(&org, "any", "C:\\WORK\\FOO\\BAR"));
         assert!(org_policy_applies(&org, "any", "/work/FoO/bar"));
+    }
+}
+
+#[cfg(test)]
+mod preset_tests {
+    use super::*;
+
+    fn presets(tool: AgentTool) -> Vec<Profile> {
+        agent_profile_presets(&tool, "C:\\projects\\myapp")
+    }
+
+    #[test]
+    fn cursor_presets_have_correct_ids() {
+        let ps = presets(AgentTool::Cursor);
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0].id, "cursor.standard");
+        assert_eq!(ps[1].id, "cursor.strict");
+    }
+
+    #[test]
+    fn cursor_standard_allows_cursor_api() {
+        let ps = presets(AgentTool::Cursor);
+        let std = &ps[0];
+        assert!(std.policy.network.allowed_hosts.iter().any(|h| h.contains("cursor.sh")));
+        assert_eq!(std.policy.network.default_action, DefaultAction::Deny);
+    }
+
+    #[test]
+    fn cursor_strict_denies_network() {
+        let ps = presets(AgentTool::Cursor);
+        let strict = &ps[1];
+        assert!(strict.policy.network.allowed_hosts.is_empty());
+    }
+
+    #[test]
+    fn copilot_presets_have_correct_ids() {
+        let ps = presets(AgentTool::Copilot);
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0].id, "copilot.standard");
+        assert_eq!(ps[1].id, "copilot.strict");
+    }
+
+    #[test]
+    fn copilot_standard_allows_github_api() {
+        let ps = presets(AgentTool::Copilot);
+        let std = &ps[0];
+        assert!(std.policy.network.allowed_hosts.iter().any(|h| h.contains("github.com")));
+    }
+
+    #[test]
+    fn goose_presets_have_correct_ids() {
+        let ps = presets(AgentTool::Goose);
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0].id, "goose.standard");
+        assert_eq!(ps[1].id, "goose.strict");
+    }
+
+    #[test]
+    fn goose_standard_allows_anthropic_and_openai() {
+        let ps = presets(AgentTool::Goose);
+        let std = &ps[0];
+        assert!(std.policy.network.allowed_hosts.iter().any(|h| h == "api.anthropic.com"));
+        assert!(std.policy.network.allowed_hosts.iter().any(|h| h == "api.openai.com"));
+    }
+
+    #[test]
+    fn opencode_presets_have_correct_ids() {
+        let ps = presets(AgentTool::OpenCode);
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0].id, "opencode.standard");
+        assert_eq!(ps[1].id, "opencode.strict");
+    }
+
+    #[test]
+    fn gemini_presets_have_correct_ids() {
+        let ps = presets(AgentTool::GeminiCli);
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0].id, "gemini.standard");
+        assert_eq!(ps[1].id, "gemini.strict");
+    }
+
+    #[test]
+    fn gemini_standard_allows_google_api() {
+        let ps = presets(AgentTool::GeminiCli);
+        let std = &ps[0];
+        assert!(std.policy.network.allowed_hosts.iter().any(|h| h.contains("googleapis.com")));
+    }
+
+    #[test]
+    fn gemini_strict_denies_network() {
+        let ps = presets(AgentTool::GeminiCli);
+        let strict = &ps[1];
+        assert!(strict.policy.network.allowed_hosts.is_empty());
+        assert_eq!(strict.policy.network.default_action, DefaultAction::Deny);
+    }
+
+    #[test]
+    fn all_standard_presets_include_project_root_in_writable() {
+        let root = "C:\\projects\\myapp";
+        let tools = vec![
+            AgentTool::Cursor,
+            AgentTool::Copilot,
+            AgentTool::Goose,
+            AgentTool::OpenCode,
+            AgentTool::GeminiCli,
+        ];
+        for tool in tools {
+            let ps = agent_profile_presets(&tool, root);
+            let std = &ps[0];
+            assert!(
+                std.policy.filesystem.writable_roots.iter().any(|r| r == root),
+                "{:?} standard preset missing project root in writable_roots",
+                std.id
+            );
+        }
+    }
+
+    #[test]
+    fn all_standard_presets_deny_network_by_default() {
+        let tools = vec![
+            AgentTool::Cursor,
+            AgentTool::Copilot,
+            AgentTool::Goose,
+            AgentTool::OpenCode,
+            AgentTool::GeminiCli,
+        ];
+        for tool in tools {
+            let ps = presets(tool);
+            let std = &ps[0];
+            assert_eq!(
+                std.policy.network.default_action,
+                DefaultAction::Deny,
+                "{} standard preset should deny network by default",
+                std.id
+            );
+        }
     }
 }

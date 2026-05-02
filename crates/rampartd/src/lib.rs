@@ -1878,10 +1878,7 @@ pub fn profiles_for_agent(agent_id: Option<&str>, project_root: &str) -> Vec<Pro
     match agent_id {
         Some(id) => {
             let tool = agent_tool_from_id(id);
-            let presets = policy_core::agent_profile_presets(&tool, project_root);
-            // agent_profile_presets falls back to generic when there are no agent-specific
-            // presets, so we always get a non-empty list.
-            presets
+            policy_core::agent_profile_presets(&tool, project_root)
         }
         None => policy_core::desktop_profile_presets(project_root),
     }
