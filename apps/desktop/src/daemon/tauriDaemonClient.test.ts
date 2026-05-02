@@ -208,6 +208,121 @@ describe("tauri daemon client", () => {
     expect(v.explanation).toBeNull();
   });
 
+  it("maps launchSession and stopSession SessionState from Rust snake_case", async () => {
+    invoke.mockResolvedValueOnce({
+      id: "sess-1",
+      status: "running",
+      profile_id: "claude-code.standard",
+      project_path: "C:\\projects\\test",
+    });
+    invoke.mockResolvedValueOnce({
+      id: "sess-1",
+      status: "finished",
+      profile_id: "claude-code.standard",
+      project_path: "C:\\projects\\test",
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const launched = await tauriDaemonClient.launchSession({
+      projectPath: "C:\\projects\\test",
+      agentId: "claude-code",
+      profileId: "claude-code.standard",
+      isolationMode: "windows-native",
+    });
+    const stopped = await tauriDaemonClient.stopSession("sess-1");
+
+    expect(invoke).toHaveBeenCalledWith("launch_session", expect.anything());
+    expect(launched.id).toBe("sess-1");
+    expect(launched.status).toBe("active");
+    expect(launched.profileId).toBe("claude-code.standard");
+    expect(launched.projectPath).toBe("C:\\projects\\test");
+
+    expect(stopped.status).toBe("stopped");  // "finished" maps to "stopped"
+  });
+
+  it("maps getSyncStatus snake_case fields to camelCase", async () => {
+    invoke.mockResolvedValue({
+      configured: true,
+      queue_depth: 42,
+      last_sync_at_ms: 1700000099000,
+      last_error: null,
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const status = await tauriDaemonClient.getSyncStatus();
+
+    expect(invoke).toHaveBeenCalledWith("get_sync_status");
+    expect(status.configured).toBe(true);
+    expect(status.queueDepth).toBe(42);
+    expect(status.lastSyncAtMs).toBe(1700000099000);
+    expect(status.lastError).toBeNull();
+  });
+
+  it("maps fetchOrgPolicy nested snake_case fields to camelCase", async () => {
+    invoke.mockResolvedValue({
+      id: "org-policy-1",
+      name: "Acme Corp Policy",
+      description: "Standard policy.",
+      scope: {
+        agent_types: ["claude-code", "codex"],
+        project_path_glob: "C:\\projects\\*",
+      },
+      policy: {
+        filesystem: {
+          readable_roots: ["C:\\projects"],
+          writable_roots: ["C:\\projects\\out"],
+          blocked_roots: ["C:\\Users\\dev\\.ssh"],
+        },
+        network: {
+          default_action: "deny",
+          allowed_hosts: ["api.github.com"],
+          blocked_hosts: ["evil.example.com"],
+        },
+        process: {
+          default_action: "allow",
+          allowed_commands: ["git", "npm"],
+          blocked_commands: ["rm"],
+        },
+      },
+      signature: null,
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const policy = await tauriDaemonClient.fetchOrgPolicy();
+
+    expect(invoke).toHaveBeenCalledWith("fetch_org_policy");
+    expect(policy).not.toBeNull();
+    expect(policy!.scope).not.toBeNull();
+    expect(policy!.scope!.agentTypes).toEqual(["claude-code", "codex"]);
+    expect(policy!.scope!.projectPathGlob).toBe("C:\\projects\\*");
+    expect(policy!.policy.filesystem.readableRoots).toEqual(["C:\\projects"]);
+    expect(policy!.policy.filesystem.writableRoots).toEqual(["C:\\projects\\out"]);
+    expect(policy!.policy.filesystem.blockedRoots).toEqual(["C:\\Users\\dev\\.ssh"]);
+    expect(policy!.policy.network.defaultAction).toBe("deny");
+    expect(policy!.policy.network.allowedHosts).toEqual(["api.github.com"]);
+    expect(policy!.policy.process.defaultAction).toBe("allow");
+    expect(policy!.policy.process.allowedCommands).toEqual(["git", "npm"]);
+  });
+
+  it("maps loadProfile signature_status from Rust snake_case", async () => {
+    invoke.mockResolvedValue({
+      id: "claude-code.strict",
+      displayName: "Claude Code Strict",
+      detail: "Strict profile.",
+      signature_status: "valid",
+      filesystem: { readableRoots: [], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny", allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "allow", allowedCommands: [], blockedCommands: [] },
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const profile = await tauriDaemonClient.loadProfile("claude-code.strict");
+
+    expect(invoke).toHaveBeenCalledWith("load_profile", { profileId: "claude-code.strict" });
+    expect(profile.signatureStatus).toBe("valid");
+    expect(profile.id).toBe("claude-code.strict");
+  });
+
   it("maps preflightCheck fromOrgPolicy field from Rust snake_case", async () => {
     invoke.mockResolvedValue({
       ready: true,
