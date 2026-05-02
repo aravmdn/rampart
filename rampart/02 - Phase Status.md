@@ -1,5 +1,5 @@
 # 02 PHASE STATUS
-last updated: 2026-05-02 (routine 13 — mapping-layer edge case tests)
+last updated: 2026-05-02 (routine 14 — IsolationMode + SignatureStatus exhaustiveness tests)
 
 ## DONE — Phase 1
 agent adapters + preflight in rampartd · capability warnings before launch · launcher/session console split · terminal-first UX preserved

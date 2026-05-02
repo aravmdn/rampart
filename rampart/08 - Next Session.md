@@ -1,21 +1,21 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #13 — mapping-layer edge case tests)
+last updated: 2026-05-02 (scheduled routine #14 — IsolationMode + SignatureStatus exhaustiveness tests)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #13)
+## where we left off (2026-05-02, scheduled routine #14)
 
-Routine #13 closed the remaining coverage gaps in `tauriDaemonClient.test.ts`:
+Routine #14 closed the two remaining union-type coverage gaps in `tauriDaemonClient.test.ts`:
 
-- **preflightCheck invoke args**: assert `invoke` receives `{ projectDir, agentId, profileId }` — the arg names were never verified.
-- **stopSession invoke args**: assert `invoke` receives `{ sessionId: "sess-42" }`; verify status maps `"finished"` → `"stopped"`.
-- **configureOrgPolicyUrl(null)**: the null/clear-URL path was untested.
-- **listSessionHistory with null capabilitySnapshot + agent_tool**: null snapshot path untested; `agent_tool → agentId` mapping in history session untested.
+- **IsolationMode "wsl2"**: `launchSession` with `isolationMode: "wsl2"` — verified the value passes through to invoke unchanged.
+- **SignatureStatus "invalid"**: `loadProfile` with `signature_status: "invalid"` — verified the snake_case field maps to `signatureStatus: "invalid"` correctly.
 
-All 31 TypeScript tests pass. Committed + pushed to main.
+All 33 TypeScript tests pass. Committed + pushed to main.
+
+Audit finding: `mockDaemonClient.ts` signatures all match `DaemonApi` exactly — no divergence. TypeScript interface enforcement keeps this in sync automatically.
 
 Previous routine (#12): cancel path + policy refinement integration tests in App.test.tsx.
 
@@ -28,8 +28,9 @@ Previous routine (#12): cancel path + policy refinement integration tests in App
   - ✓ Headless CLI (`apps/cli/`): code written, manually reviewed, not yet compiled.
   - ✓ WFP violation streaming: code written; privilege validation pending runtime test.
   - ✓ WFP monitor error hint: actionable stderr message when access-denied.
-  - ✓ Mapping layer: 23 unit tests + 5 App integration tests = 31 total. All DaemonApi methods covered including edge cases.
+  - ✓ Mapping layer: 25 unit tests + 5 App integration tests = 33 total. All DaemonApi methods, all union variants covered.
   - ✓ Per-agent capability matrices: all 8 AgentTool variants have tailored presets.
+  - ✓ mockDaemonClient.ts audited: all method signatures match DaemonApi interface exactly.
   - Pending: WFP monitor privilege validation (requires interactive session).
   - Pending: CLI runtime validation (requires VS Dev Shell).
   - Deferred: AppContainer isolation mode.
@@ -38,13 +39,15 @@ Previous routine (#12): cancel path + policy refinement integration tests in App
 
 ## next tasks (priority order)
 
-**0. [routine-only] Audit for remaining test gaps**
+**0. [routine-only] No schedulable TypeScript test gaps remain**
 
-The mapping-layer unit tests are now comprehensive (23 tests covering all 17 DaemonApi methods + edge cases). The App integration tests cover all first-class product flows (5 tests). No obvious schedulable test gaps remain in TypeScript.
+The mapping-layer tests are now fully exhaustive:
+- All 17 DaemonApi methods tested
+- All union-type variants tested: `IsolationMode` (windows-native, wsl2), `SignatureStatus` (unsigned, valid, invalid)
+- All first-class product flows covered in App integration tests (5 tests)
+- mockDaemonClient.ts verified against real client
 
-Next schedulable items if a routine is dispatched:
-- Audit `mockDaemonClient.ts` for any method stub that diverges from the real client's parameter names or call signature (a sync issue can cause tests to pass against a mock that doesn't match production).
-- Check `contracts.ts` for any exported types that are not exercised by the test suite — specifically `IsolationMode` and `SignatureStatus` exhaustiveness.
+No further TypeScript test work is schedulable. Routines dispatched going forward should focus on doc drift, architecture review, or code audit tasks.
 
 **1. WFP monitor privilege validation** (MUST be done in interactive session — NOT schedulable)
 
