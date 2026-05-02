@@ -25,6 +25,7 @@ target/
 !README.md
 !AGENTS.md
 !CLAUDE.md
+!SKILLS.md
 !docs/
 !docs/**/*.md
 !docs/adr/**/*.md
