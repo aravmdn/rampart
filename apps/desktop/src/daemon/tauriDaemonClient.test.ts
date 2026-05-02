@@ -471,6 +471,16 @@ describe("tauri daemon client", () => {
     expect(invoke).toHaveBeenCalledWith("configure_org_policy_url", { url: "https://policy.example.com/org.json" });
   });
 
+  it("fetchOrgPolicy returns null when no policy exists", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const policy = await tauriDaemonClient.fetchOrgPolicy();
+
+    expect(invoke).toHaveBeenCalledWith("fetch_org_policy");
+    expect(policy).toBeNull();
+  });
+
   it("currentOrgPolicy returns null when no policy is cached", async () => {
     invoke.mockResolvedValue(null);
 

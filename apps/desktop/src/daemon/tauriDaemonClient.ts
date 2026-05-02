@@ -402,12 +402,12 @@ export const tauriDaemonClient: DaemonApi = {
     await invoke("configure_org_policy_url", { url });
   },
   async fetchOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
-    const raw = await invoke<any>("fetch_org_policy");
+    const raw = await invoke<RawOrgPolicy | null>("fetch_org_policy");
     if (!raw) return null;
     return mapOrgPolicy(raw);
   },
   async currentOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
-    const raw = await invoke<any>("current_org_policy");
+    const raw = await invoke<RawOrgPolicy | null>("current_org_policy");
     if (!raw) return null;
     return mapOrgPolicy(raw);
   },
