@@ -1,31 +1,29 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #16 — code quality sweep)
+last updated: 2026-05-02 (scheduled routine #17 — drift + stub fix)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #16)
+## where we left off (2026-05-02, scheduled routine #17)
 
-Routine #16 was a code quality sweep — no architectural changes.
+Routine #17 was a drift + stub fix sweep — two small fixes.
 
 **What was audited:**
-- All `.unwrap()` calls: only one exists, inside a test assert. Clean.
-- `todo!`, `unimplemented!`, `unreachable!` macros: none in production paths. Clean.
-- Debug `println!`/`eprintln!`: only in intentional diagnostic paths (ETW init, WFP monitor errors, CLI main). Appropriate.
+- All DaemonApi methods (17 total): present in tauriDaemonClient, mockDaemonClient, and Tauri generate_handler![]. Consistent.
+- `.unwrap()`/`.expect()` in non-test Rust: all in test files or dev harness (main.rs). Clean.
+- `eprintln!`/`println!` in lib code: only in intentional diagnostic paths. Clean.
 - TypeScript `console.log`/`console.warn` in production: none. Clean.
-- DaemonApi interface vs tauriDaemonClient vs mockDaemonClient: all 15 methods fully implemented in all three. Consistent.
-- Tauri command registration in main.rs vs DaemonApi: all 15 commands registered. Consistent.
-- Rust serde attributes: ProfileDetail + sub-structs all use `#[serde(rename_all = "camelCase")]`. Raw types in tauriDaemonClient.ts correctly use snake_case for non-camelCase structs (AgentCatalogEntry, ProfileSummary, SelectedLaunchConfig). Mapping layer is correct.
-- agent_tool_from_id() supports 8 agents: claude-code, codex, cursor, copilot, aider, goose, opencode, gemini.
+- README vs CLI usage: minor discrepancy found and fixed.
 
-**One bug fixed:**
-- `apps/cli/src/main.rs` usage hint was missing `copilot` from the `--agent` list (7 of 8 listed). Fixed and pushed.
+**Two fixes made:**
+1. `crates/rampartd/src/main.rs` stub used stale `agent_tool: AgentTool::Codex` field (removed in Phase 4 when `LaunchSessionRequest` switched to `agent_id: String`). Updated to `agent_id: "codex".into()` + `isolation_mode: IsolationMode::default()`. Unused `AgentTool` import removed.
+2. `README.md` line 161: `rampart list-profiles --agent <id>` → `rampart list-profiles --agent <id> --project <path>` to match architecture doc and CLI usage hint.
 
 **All 33 TypeScript tests pass.**
 
-Previous routine (#15): doc drift audit — no code changes.
+Previous routine (#16): code quality sweep — one bug fix (copilot in CLI usage hint).
 
 ---
 
@@ -41,6 +39,8 @@ Previous routine (#15): doc drift audit — no code changes.
   - ✓ mockDaemonClient.ts audited: all method signatures match DaemonApi interface exactly.
   - ✓ Docs: architecture.md + README.md fully reflect Phase 5 agent expansion.
   - ✓ CLI usage hint: all 8 agent IDs listed correctly (fixed routine #16).
+  - ✓ rampartd dev stub (main.rs): updated to current LaunchSessionRequest API (fixed routine #17).
+  - ✓ README list-profiles usage: matches CLI and architecture doc (fixed routine #17).
   - Pending: WFP monitor privilege validation (requires interactive session).
   - Pending: CLI runtime validation (requires VS Dev Shell).
   - Deferred: AppContainer isolation mode.
@@ -70,6 +70,7 @@ then check Tauri stderr for:
 **For future scheduled routines:**
 - Codebase is clean. No outstanding doc drift, dead code, or TODO items.
 - Next schedulable sweep: audit for any new drift introduced by interactive sessions (after WFP/CLI validation).
+- Note: routine #17 fixed two latent stub/doc drift items. All known drift is now resolved.
 
 ---
 

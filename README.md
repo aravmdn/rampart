@@ -158,7 +158,7 @@ One known limitation in Windows Native mode: enforcement fires at the OS level b
 
 **Phase 5 — Headless, CI, and broader engine support (in progress)**
 
-- **Headless `rampart run` CLI** (complete): `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr, streams audit and violation events as JSONL to stdout, and exits cleanly on Ctrl+C or agent exit. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id>` lists available profiles.
+- **Headless `rampart run` CLI** (complete): `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr, streams audit and violation events as JSONL to stdout, and exits cleanly on Ctrl+C or agent exit. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id> --project <path>` lists available profiles.
 - **WFP violation streaming** (in progress): blocked connections detected by `WfpNetworkGuard` now surface in the session console via `FwpmNetEventSubscribe0`. Whether this subscription succeeds at Medium integrity (non-elevated) is pending runtime validation.
 
 **What remains to reach a shippable beta**

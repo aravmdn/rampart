@@ -1,7 +1,5 @@
 use engine_greywall::GreywallAdapter;
-use policy_core::{
-    AgentTool, DefaultAction, FilesystemPolicy, NetworkPolicy, Policy, ProcessPolicy, Profile,
-};
+use policy_core::{DefaultAction, FilesystemPolicy, NetworkPolicy, Policy, ProcessPolicy, Profile};
 use rampartd::{DaemonApi, LaunchSessionRequest, RampartDaemon};
 
 fn main() {
@@ -39,8 +37,9 @@ fn main() {
     let session = daemon
         .launch_session(LaunchSessionRequest {
             project_dir: r"C:\projects\rampart".into(),
-            agent_tool: AgentTool::Codex,
+            agent_id: "codex".into(),
             profile_id: "windows-safe".into(),
+            isolation_mode: policy_core::IsolationMode::default(),
         })
         .expect("launch should work");
     println!("session launched: {}", session.id);
