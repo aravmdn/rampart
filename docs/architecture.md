@@ -109,7 +109,7 @@ The following early Phase 2 priorities are also complete:
 - Violation explanations: `ViolationExplanation` in policy-core separates the policy reason, platform/engine limitation, and remediation hint into structured fields. `ViolationEvent` carries an optional explanation.
 - Stable audit taxonomy: `AuditEventCategory` (SessionLifecycle / PolicyEnforcement / SystemAlert) and domain-specific `AuditEventKind` variants (FilesystemAllowed, FilesystemBlocked, NetworkAllowed, NetworkBlocked, ProcessAllowed, ProcessBlocked) replace the generic pair for new events.
 - History detail view: the desktop shell has a dedicated history view. `HistoryList` shows session metadata; `HistoryDetailPanel` shows the full audit trail and violations for a selected session. The launcher's Recent History section links to it.
-- Agent-aware profile presets: `agent_profile_presets()` in policy-core returns tailored standard and strict presets for ClaudeCode, Codex, and Aider. `launch_context()` filters to show only the selected agent's presets. `preflight_check()` resolves profiles from the agent-specific list first.
+- Agent-aware profile presets: `agent_profile_presets()` in policy-core returns tailored standard and strict presets for ClaudeCode, Codex, and Aider. `launch_context()` filters to show only the selected agent's presets. `preflight_check()` resolves profiles from the agent-specific list first. (Extended to Cursor, Copilot, Goose, OpenCode, GeminiCli in Phase 5.)
 
 ## Phase 4 implementation status
 
@@ -124,6 +124,8 @@ The following early Phase 2 priorities are also complete:
 **Headless CLI** — complete. `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr and streams audit + violation events as JSONL to stdout. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id> --project <path>` lists agent-specific presets.
 
 **WFP violation streaming** — complete (privilege validation pending runtime test). `WfpEventMonitor` subscribes via `FwpmNetEventSubscribe0` and surfaces blocked connections as `SessionEventRecord::Audit` entries in the active session. Events are drained and persisted at `stop_session`. If the subscription fails at Medium integrity (access-denied), a descriptive hint is emitted to stderr. Full violation streaming in Windows Native mode without elevation remains an open UX gap.
+
+**Per-agent capability matrices** — complete. `agent_profile_presets()` in policy-core now covers all 8 supported agent tools: ClaudeCode, Codex, Aider (Phase 2), plus Cursor, Copilot, Goose, OpenCode, and GeminiCli (Phase 5). Each agent gets a standard profile (allowing known API endpoints and config directories) and a strict profile (full network deny). Agent-specific paths and hostnames are tailored per tool — e.g., cursor.sh endpoints for Cursor, github.com/copilot-proxy for Copilot, googleapis.com for GeminiCli. 12 Rust unit tests cover the expanded matrix.
 
 ## Research-informed lessons
 

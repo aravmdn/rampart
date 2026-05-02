@@ -4,7 +4,7 @@ Local-first blast-radius control for AI coding agents.
 
 Rampart is a Windows-first security product for developers who want to run AI coding agents with enforced least privilege over filesystem, network, and process execution. It wraps agent execution in real controls, captures what happened during a session, and explains what was blocked and why.
 
-The intended desktop product should feel like a local launch-and-control console for agent sessions. A user picks a project, chooses an installed agent such as Claude Code or Codex, selects a profile, launches the session through Rampart, and then watches live session state, blocked actions, and history. Rampart does not need to replace every agent's native interface on day one in order to be useful.
+The intended desktop product should feel like a local launch-and-control console for agent sessions. A user picks a project, chooses an installed agent such as Claude Code, Codex, or Cursor, selects a profile, launches the session through Rampart, and then watches live session state, blocked actions, and history. Rampart does not need to replace every agent's native interface on day one in order to be useful.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-1f2937.svg)](./LICENSE)
 [![Platform: Windows First](https://img.shields.io/badge/platform-Windows%20first-0f766e.svg)](#current-status)
@@ -48,7 +48,7 @@ The current intended desktop workflow is:
 
 1. Open Rampart.
 2. Choose a local project or repository.
-3. Choose an installed agent, such as Claude Code, Codex, Aider, Goose, or OpenCode.
+3. Choose an installed agent, such as Claude Code, Codex, Cursor, Copilot, Aider, Goose, OpenCode, or Gemini CLI.
 4. Accept the suggested profile or open the profile editor to adjust paths, hosts, and commands.
 5. Launch the agent session through Rampart.
 6. Watch live session state, blocked actions, and explanations.
