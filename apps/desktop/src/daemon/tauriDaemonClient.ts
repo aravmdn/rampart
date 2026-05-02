@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AuditEvent,
+  CapabilityKey,
+  CapabilityStatus,
   DaemonApi,
   LaunchContext,
   LaunchSessionRequest,
@@ -217,8 +219,8 @@ function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
       engineName: raw.capabilities.engine_name,
       platform: raw.capabilities.platform as "windows" | "macos" | "linux",
       capabilities: (raw.capability_items ?? []).map((item) => ({
-        key: item.key as any,
-        status: item.status as any,
+        key: item.key as CapabilityKey,
+        status: item.status as CapabilityStatus,
         detail: item.detail,
       })),
     },
@@ -426,8 +428,8 @@ export const tauriDaemonClient: DaemonApi = {
             engineName: entry.capability_snapshot.engine_name,
             platform: entry.capability_snapshot.platform as "windows" | "macos" | "linux",
             capabilities: (entry.capability_snapshot.capability_items ?? []).map((item) => ({
-              key: item.key as any,
-              status: item.status as any,
+              key: item.key as CapabilityKey,
+              status: item.status as CapabilityStatus,
               detail: item.detail,
             })),
           }
