@@ -6,6 +6,7 @@ import type {
   LaunchContext,
   EngineCapabilitySnapshot,
   LaunchSessionRequest,
+  OrgPolicy,
   PreflightReport,
   ProfileDetail,
   ProfileSummary,
@@ -424,11 +425,11 @@ export const mockDaemonClient: DaemonApi = {
   async configureOrgPolicyUrl(_url: string | null): Promise<void> {
     await pause(30);
   },
-  async fetchOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
+  async fetchOrgPolicy(): Promise<OrgPolicy | null> {
     await pause(150);
     return null;
   },
-  async currentOrgPolicy(): Promise<import("./contracts").OrgPolicy | null> {
+  async currentOrgPolicy(): Promise<OrgPolicy | null> {
     await pause(20);
     return null;
   },
