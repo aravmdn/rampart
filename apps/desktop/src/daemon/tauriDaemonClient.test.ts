@@ -51,6 +51,7 @@ describe("tauri daemon client", () => {
     expect(ctx.selected.profileId).toBe("claude-code.standard");
     expect(ctx.capabilities.engineName).toBe("rampart-windows");
     expect(ctx.capabilities.capabilities[0]!.key).toBe("network_egress");
+    expect(ctx.capabilities.capabilities[0]!.status).toBe("supported");
   });
 
   it("persists selected launch config through tauri invoke", async () => {
@@ -191,6 +192,7 @@ describe("tauri daemon client", () => {
     expect(entry.capabilitySnapshot!.engineName).toBe("rampart-windows");
     expect(entry.capabilitySnapshot!.capabilities).toHaveLength(1);
     expect(entry.capabilitySnapshot!.capabilities[0]!.key).toBe("network_egress");
+    expect(entry.capabilitySnapshot!.capabilities[0]!.status).toBe("partial");
 
     // Event mapping
     expect(entry.events).toHaveLength(1);
