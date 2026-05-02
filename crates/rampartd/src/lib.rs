@@ -8,7 +8,7 @@ use engine_windows::{
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
     AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
-    OrgPolicy, Profile, Session, SessionStatus, ViolationEvent,
+    Profile, Session, SessionStatus, ViolationEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -18,9 +18,9 @@ use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-// Re-export OrgPolicy and IsolationMode for use by binaries
-pub use policy_core::OrgPolicy;
+// Re-export for use by binaries
 pub use policy_core::IsolationMode;
+pub use policy_core::OrgPolicy;
 
 // ---------------------------------------------------------------------------
 // Agent adapters

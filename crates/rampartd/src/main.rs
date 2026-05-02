@@ -9,6 +9,7 @@ fn main() {
         name: "Windows Safe".into(),
         description: Some("Project scoped default-deny profile.".into()),
         extends: None,
+        signature: None,
         policy: Policy {
             filesystem: FilesystemPolicy {
                 readable_roots: vec![r"C:\projects\rampart".into()],

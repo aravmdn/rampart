@@ -6,16 +6,20 @@ so the next session opens cold with full context. Cross-reference: → 02 for fu
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #21)
+## where we left off (2026-05-02, interactive session — CLI build + validation)
 
-Routine #21 was a full clean sweep — no drift found, no fixes needed.
-
-**What was audited:**
-- TODOs/FIXMEs in production code (crates/, apps/desktop/src, apps/cli/, packages/): none.
-- unwrap/expect in non-test Rust: only in test helpers and dev stub (main.rs) — clean.
-- DaemonApi (contracts.ts): 17 methods. tauriDaemonClient.ts (17 async), mockDaemonClient.ts (17 async): all consistent.
-- graphify.exe update: completed successfully, graph up to date.
-- All 33 TypeScript tests pass.
+**What was done:**
+- Fixed compile errors blocking CLI build: 18 `Profile` preset literals in `policy-core/lib.rs` were
+  missing `signature: None` (field added for ProfileSignature but presets not updated).
+- Fixed duplicate `pub use policy_core::OrgPolicy` in `rampartd/lib.rs` (conflicted with existing use).
+- Fixed `rampartd/src/main.rs` dev stub: same `signature: None` omission.
+- Full workspace builds clean (dev profile, MSVC target). 33 TypeScript tests pass.
+- CLI validated runtime:
+  - `rampart list-profiles --project-root C:\projects\rampart` → returns windows-safe, windows-strict ✓
+  - `rampart list-profiles --project-root ... --agent claude-code` → returns claude-code.standard, claude-code.strict ✓
+  - `rampart run --agent claude-code --profile claude-code.strict --project C:\projects\rampart` →
+    preflight runs, finds claude on PATH, reports enforcement warnings, starts session ✓
+- WFP monitor privilege: tested under elevated (admin) session only. Non-elevated test still pending.
 
 Previous routine (#20): clean sweep, same result.
 
@@ -23,45 +27,35 @@ Previous routine (#20): clean sweep, same result.
 
 ## current state
 
-- Phase 1–4 complete.
-- Phase 5 progress:
-  - ✓ Headless CLI (`apps/cli/`): code written, manually reviewed, not yet compiled.
-  - ✓ WFP violation streaming: code written; privilege validation pending runtime test.
-  - ✓ WFP monitor error hint: actionable stderr message when access-denied.
-  - ✓ Mapping layer: 25 unit tests + 5 App integration tests = 33 total. All DaemonApi methods, all union variants covered.
+- Phase 1–5 complete (minus AppContainer and non-elevated WFP test).
+- Phase 5 status:
+  - ✓ Headless CLI (`apps/cli/`): builds and runtime-validated (list-profiles + run).
+  - ✓ WFP violation streaming: code written; privilege validation done under admin.
+  - ✓ WFP monitor error hint: actionable stderr when access-denied.
+  - ✓ Mapping layer: 25 unit tests + 5 App integration tests = 33 total.
   - ✓ Per-agent capability matrices: all 8 AgentTool variants have tailored presets.
-  - ✓ mockDaemonClient.ts audited: all method signatures match DaemonApi interface exactly.
+  - ✓ mockDaemonClient.ts: all 17 method signatures match DaemonApi.
   - ✓ Docs: architecture.md + README.md fully reflect Phase 5 agent expansion.
-  - ✓ CLI usage hint: all 8 agent IDs listed correctly (fixed routine #16).
-  - ✓ rampartd dev stub (main.rs): updated to current LaunchSessionRequest API (fixed routine #17).
-  - ✓ README list-profiles usage: matches CLI and architecture doc (fixed routine #17).
-  - ✓ default_profiles() + load_profile(): all 8 agents covered (fixed routine #18).
-  - ✓ Rust test files: LaunchSessionRequest fields updated to agent_id + isolation_mode (fixed routine #18).
-  - Pending: WFP monitor privilege validation (requires interactive session).
-  - Pending: CLI runtime validation (requires VS Dev Shell).
+  - ✓ Preset literals: all 18 Profile { } blocks have signature: None (fixed this session).
+  - ✓ Full workspace (all crates + CLI + desktop backend) compiles clean.
+  - Pending: WFP monitor non-elevated test (run desktop app as normal user, verify graceful error hint).
   - Deferred: AppContainer isolation mode.
 
 ---
 
 ## next tasks (priority order)
 
-**1. WFP monitor privilege validation** (MUST be done in interactive session — NOT schedulable)
+**1. WFP monitor non-elevated test** (run desktop app as normal user — NOT schedulable)
 
-Run the desktop app (normal, non-elevated launch), start a session with network blocked,
-then check Tauri stderr for:
+Run the Tauri desktop app without elevation. Start a session with network blocked.
+Check Tauri stderr:
   - `rampartd: WFP event monitor failed for session '...': ... — run as Administrator`
-    → CONFIRMED: document in 07; consider mitigation options.
-  - No error line → monitor subscribed successfully; verify blocked connections appear in UI.
+    → CONFIRMED: document in 07; consider whether to show a UI warning.
+  - No error → monitor subscribed at medium integrity (unexpected but possible).
 
-**2. CLI runtime validation** (requires VS Dev Shell — NOT schedulable)
+**2. AppContainer isolation mode** (clean seam; deferred — most complex primitive)
 
-- Build: `cargo build --bin rampart --target x86_64-pc-windows-msvc` in VS Dev Shell.
-- Test `list-profiles` and `run` subcommands.
-- Document findings in `07 - Gotchas and Decisions.md`.
-
-**3. AppContainer isolation mode** (clean seam; deferred — most complex primitive)
-
-- Defer until WFP monitor and CLI are runtime-validated.
+- All other Phase 5 work is complete. AppContainer is the remaining deferred item.
 
 **For future scheduled routines:**
 - Codebase is clean. No outstanding doc drift, dead code, or TODO items.
@@ -82,8 +76,8 @@ Key points:
 
 ## open questions / blockers
 
-- WFP monitor privilege: likely fails at Medium integrity (unconfirmed until tested).
-- CLI not yet compiled / runtime-tested (MSVC linker unavailable in scheduled routine env).
+- WFP monitor privilege at medium integrity: still unconfirmed (only tested under admin so far).
+- AppContainer: deferred clean seam.
 
 ---
 

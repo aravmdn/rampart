@@ -971,6 +971,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into()],
                         },
                     },
+                    signature: None,
                 },
                 Profile {
                     id: "claude-code.strict".into(),
@@ -996,6 +997,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into(), "cmd".into()],
                         },
                     },
+                    signature: None,
                 },
             ]
         }
@@ -1024,6 +1026,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                         blocked_commands: vec!["powershell".into()],
                     },
                 },
+                signature: None,
             },
             Profile {
                 id: "codex.strict".into(),
@@ -1049,6 +1052,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                         blocked_commands: vec!["powershell".into(), "cmd".into()],
                     },
                 },
+                signature: None,
             },
         ],
         AgentTool::Aider => vec![
@@ -1084,6 +1088,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                         blocked_commands: vec!["powershell".into()],
                     },
                 },
+                signature: None,
             },
             Profile {
                 id: "aider.strict".into(),
@@ -1109,6 +1114,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                         blocked_commands: vec!["powershell".into(), "cmd".into()],
                     },
                 },
+                signature: None,
             },
         ],
         AgentTool::Cursor => {
@@ -1148,6 +1154,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into()],
                         },
                     },
+                    signature: None,
                 },
                 Profile {
                     id: "cursor.strict".into(),
@@ -1173,6 +1180,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into(), "cmd".into()],
                         },
                     },
+                    signature: None,
                 },
             ]
         }
@@ -1210,6 +1218,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into()],
                         },
                     },
+                    signature: None,
                 },
                 Profile {
                     id: "copilot.strict".into(),
@@ -1235,6 +1244,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into(), "cmd".into()],
                         },
                     },
+                    signature: None,
                 },
             ]
         }
@@ -1274,6 +1284,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into()],
                         },
                     },
+                    signature: None,
                 },
                 Profile {
                     id: "goose.strict".into(),
@@ -1299,6 +1310,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into(), "cmd".into()],
                         },
                     },
+                    signature: None,
                 },
             ]
         }
@@ -1336,6 +1348,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into()],
                         },
                     },
+                    signature: None,
                 },
                 Profile {
                     id: "opencode.strict".into(),
@@ -1361,6 +1374,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into(), "cmd".into()],
                         },
                     },
+                    signature: None,
                 },
             ]
         }
@@ -1398,6 +1412,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into()],
                         },
                     },
+                    signature: None,
                 },
                 Profile {
                     id: "gemini.strict".into(),
@@ -1423,6 +1438,7 @@ pub fn agent_profile_presets(tool: &AgentTool, project_root: &str) -> Vec<Profil
                             blocked_commands: vec!["powershell".into(), "cmd".into()],
                         },
                     },
+                    signature: None,
                 },
             ]
         }
@@ -1458,6 +1474,7 @@ pub fn desktop_profile_presets(project_root: &str) -> Vec<Profile> {
                     blocked_commands: vec!["powershell".into()],
                 },
             },
+            signature: None,
         },
         Profile {
             id: "windows-strict".into(),
@@ -1481,6 +1498,7 @@ pub fn desktop_profile_presets(project_root: &str) -> Vec<Profile> {
                     blocked_commands: vec!["powershell".into(), "cmd".into()],
                 },
             },
+            signature: None,
         },
     ]
 }
