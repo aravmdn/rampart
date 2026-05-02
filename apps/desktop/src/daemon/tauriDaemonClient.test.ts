@@ -553,6 +553,52 @@ describe("tauri daemon client", () => {
     expect(invoke).toHaveBeenCalledWith("configure_org_policy_url", { url: null });
   });
 
+  it("launchSession passes isolationMode wsl2 through to tauri invoke", async () => {
+    invoke.mockResolvedValue({
+      id: "sess-wsl",
+      status: "running",
+      agent_tool: "ClaudeCode",
+      profile_id: "claude-code.standard",
+      project_path: "/mnt/c/projects/test",
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const session = await tauriDaemonClient.launchSession({
+      projectPath: "C:\\projects\\test",
+      agentId: "claude-code",
+      profileId: "claude-code.standard",
+      isolationMode: "wsl2",
+    });
+
+    expect(invoke).toHaveBeenCalledWith("launch_session", {
+      request: {
+        projectPath: "C:\\projects\\test",
+        agentId: "claude-code",
+        profileId: "claude-code.standard",
+        isolationMode: "wsl2",
+      },
+    });
+    expect(session.status).toBe("active");
+  });
+
+  it("loadProfile maps signature_status invalid from Rust snake_case", async () => {
+    invoke.mockResolvedValue({
+      id: "claude-code.strict",
+      displayName: "Claude Code Strict",
+      detail: "Strict profile.",
+      signature_status: "invalid",
+      filesystem: { readableRoots: [], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny", allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "allow", allowedCommands: [], blockedCommands: [] },
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const profile = await tauriDaemonClient.loadProfile("claude-code.strict");
+
+    expect(invoke).toHaveBeenCalledWith("load_profile", { profileId: "claude-code.strict" });
+    expect(profile.signatureStatus).toBe("invalid");
+  });
+
   it("listSessionHistory maps null capabilitySnapshot and agent_tool in session", async () => {
     invoke.mockResolvedValue([
       {
