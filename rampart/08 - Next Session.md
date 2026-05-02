@@ -1,29 +1,27 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #17 — drift + stub fix)
+last updated: 2026-05-02 (scheduled routine #19 — clean sweep, no drift found)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #17)
+## where we left off (2026-05-02, scheduled routine #19)
 
-Routine #17 was a drift + stub fix sweep — two small fixes.
+Routine #19 was a full clean sweep — no drift found, no fixes needed.
 
 **What was audited:**
-- All DaemonApi methods (17 total): present in tauriDaemonClient, mockDaemonClient, and Tauri generate_handler![]. Consistent.
-- `.unwrap()`/`.expect()` in non-test Rust: all in test files or dev harness (main.rs). Clean.
-- `eprintln!`/`println!` in lib code: only in intentional diagnostic paths. Clean.
-- TypeScript `console.log`/`console.warn` in production: none. Clean.
-- README vs CLI usage: minor discrepancy found and fixed.
-
-**Two fixes made:**
-1. `crates/rampartd/src/main.rs` stub used stale `agent_tool: AgentTool::Codex` field (removed in Phase 4 when `LaunchSessionRequest` switched to `agent_id: String`). Updated to `agent_id: "codex".into()` + `isolation_mode: IsolationMode::default()`. Unused `AgentTool` import removed.
-2. `README.md` line 161: `rampart list-profiles --agent <id>` → `rampart list-profiles --agent <id> --project <path>` to match architecture doc and CLI usage hint.
+- TODOs/FIXMEs in production code: none.
+- unwrap/expect in non-test Rust: only in test helpers and dev stub (main.rs) — clean.
+- DaemonApi (contracts.ts): 17 methods. tauriDaemonClient.ts, mockDaemonClient.ts, Tauri generate_handler: all consistent.
+- CLI crate (`apps/cli/src/main.rs`): imports valid (agent_tool_from_id, profiles_for_agent, run_preflight, SessionEventRecord, DaemonApi, LaunchSessionRequest, LocalDataStore, RampartService all pub in rampartd); IsolationMode::Wsl2/WindowsNative usage correct.
+- Rust test files: agent_id + isolation_mode fields correct (fixed in routine #18), verified still clean.
+- AGENTS.md, README.md, docs/architecture.md, docs/roadmap.md: all consistent with Phase 5 state.
+- 5 Phase 5 agents (Cursor, Copilot, Goose, OpenCode, GeminiCli): present in default_profiles(), load_profile(), profiles_for_agent(), agent_tool_from_id(), adapters — all 5 entry points covered.
 
 **All 33 TypeScript tests pass.**
 
-Previous routine (#16): code quality sweep — one bug fix (copilot in CLI usage hint).
+Previous routine (#18): Phase 5 agent preset bug fix (default_profiles + load_profile + 3 Rust test files).
 
 ---
 
@@ -41,6 +39,8 @@ Previous routine (#16): code quality sweep — one bug fix (copilot in CLI usage
   - ✓ CLI usage hint: all 8 agent IDs listed correctly (fixed routine #16).
   - ✓ rampartd dev stub (main.rs): updated to current LaunchSessionRequest API (fixed routine #17).
   - ✓ README list-profiles usage: matches CLI and architecture doc (fixed routine #17).
+  - ✓ default_profiles() + load_profile(): all 8 agents covered (fixed routine #18).
+  - ✓ Rust test files: LaunchSessionRequest fields updated to agent_id + isolation_mode (fixed routine #18).
   - Pending: WFP monitor privilege validation (requires interactive session).
   - Pending: CLI runtime validation (requires VS Dev Shell).
   - Deferred: AppContainer isolation mode.
@@ -70,7 +70,7 @@ then check Tauri stderr for:
 **For future scheduled routines:**
 - Codebase is clean. No outstanding doc drift, dead code, or TODO items.
 - Next schedulable sweep: audit for any new drift introduced by interactive sessions (after WFP/CLI validation).
-- Note: routine #17 fixed two latent stub/doc drift items. All known drift is now resolved.
+- Note: routine #19 confirmed the routine #18 fixes held and the full surface is clean. No new work found.
 
 ---
 
