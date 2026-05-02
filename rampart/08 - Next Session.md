@@ -1,23 +1,23 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #20 — clean sweep, no drift found)
+last updated: 2026-05-02 (scheduled routine #21 — clean sweep, no drift found)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #20)
+## where we left off (2026-05-02, scheduled routine #21)
 
-Routine #20 was a full clean sweep — no drift found, no fixes needed.
+Routine #21 was a full clean sweep — no drift found, no fixes needed.
 
 **What was audited:**
 - TODOs/FIXMEs in production code (crates/, apps/desktop/src, apps/cli/, packages/): none.
 - unwrap/expect in non-test Rust: only in test helpers and dev stub (main.rs) — clean.
-- DaemonApi (contracts.ts): 17 methods. tauriDaemonClient.ts (17 async), mockDaemonClient.ts (17 async), Tauri generate_handler (17 commands): all consistent.
+- DaemonApi (contracts.ts): 17 methods. tauriDaemonClient.ts (17 async), mockDaemonClient.ts (17 async): all consistent.
 - graphify.exe update: completed successfully, graph up to date.
 - All 33 TypeScript tests pass.
 
-Previous routine (#19): clean sweep, same result.
+Previous routine (#20): clean sweep, same result.
 
 ---
 
