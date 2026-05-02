@@ -514,4 +514,71 @@ describe("tauri daemon client", () => {
     expect(policy!.scope!.projectPathGlob).toBeNull();
     expect(policy!.policy.filesystem.readableRoots).toEqual(["C:\\projects"]);
   });
+
+  it("preflightCheck passes correct arg names to tauri invoke", async () => {
+    invoke.mockResolvedValue({ ready: true, diagnostics: [] });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    await tauriDaemonClient.preflightCheck("C:\\projects\\test", "claude-code", "claude-code.standard");
+
+    expect(invoke).toHaveBeenCalledWith("preflight_check", {
+      projectDir: "C:\\projects\\test",
+      agentId: "claude-code",
+      profileId: "claude-code.standard",
+    });
+  });
+
+  it("stopSession passes sessionId to correct tauri command", async () => {
+    invoke.mockResolvedValue({
+      id: "sess-42",
+      status: "finished",
+      profile_id: "claude-code.standard",
+      project_path: "C:\\projects\\test",
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const stopped = await tauriDaemonClient.stopSession("sess-42");
+
+    expect(invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-42" });
+    expect(stopped.id).toBe("sess-42");
+    expect(stopped.status).toBe("stopped");
+  });
+
+  it("configureOrgPolicyUrl passes null to clear the policy URL", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    await tauriDaemonClient.configureOrgPolicyUrl(null);
+
+    expect(invoke).toHaveBeenCalledWith("configure_org_policy_url", { url: null });
+  });
+
+  it("listSessionHistory maps null capabilitySnapshot and agent_tool in session", async () => {
+    invoke.mockResolvedValue([
+      {
+        session: {
+          id: "hist-2",
+          status: "finished",
+          profile_id: "codex.standard",
+          project_path: "C:\\projects\\rampart",
+          agent_tool: "Codex",
+          started_at_ms: 1700000100000,
+          ended_at_ms: 1700000200000,
+        },
+        capability_snapshot: null,
+        events: [],
+        violations: [],
+      },
+    ]);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const history = await tauriDaemonClient.listSessionHistory();
+
+    expect(history).toHaveLength(1);
+    const entry = history[0]!;
+    expect(entry.session.agentId).toBe("codex");
+    expect(entry.capabilitySnapshot).toBeNull();
+    expect(entry.events).toHaveLength(0);
+    expect(entry.violations).toHaveLength(0);
+  });
 });
