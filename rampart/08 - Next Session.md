@@ -1,27 +1,23 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #19 — clean sweep, no drift found)
+last updated: 2026-05-02 (scheduled routine #20 — clean sweep, no drift found)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #19)
+## where we left off (2026-05-02, scheduled routine #20)
 
-Routine #19 was a full clean sweep — no drift found, no fixes needed.
+Routine #20 was a full clean sweep — no drift found, no fixes needed.
 
 **What was audited:**
-- TODOs/FIXMEs in production code: none.
+- TODOs/FIXMEs in production code (crates/, apps/desktop/src, apps/cli/, packages/): none.
 - unwrap/expect in non-test Rust: only in test helpers and dev stub (main.rs) — clean.
-- DaemonApi (contracts.ts): 17 methods. tauriDaemonClient.ts, mockDaemonClient.ts, Tauri generate_handler: all consistent.
-- CLI crate (`apps/cli/src/main.rs`): imports valid (agent_tool_from_id, profiles_for_agent, run_preflight, SessionEventRecord, DaemonApi, LaunchSessionRequest, LocalDataStore, RampartService all pub in rampartd); IsolationMode::Wsl2/WindowsNative usage correct.
-- Rust test files: agent_id + isolation_mode fields correct (fixed in routine #18), verified still clean.
-- AGENTS.md, README.md, docs/architecture.md, docs/roadmap.md: all consistent with Phase 5 state.
-- 5 Phase 5 agents (Cursor, Copilot, Goose, OpenCode, GeminiCli): present in default_profiles(), load_profile(), profiles_for_agent(), agent_tool_from_id(), adapters — all 5 entry points covered.
+- DaemonApi (contracts.ts): 17 methods. tauriDaemonClient.ts (17 async), mockDaemonClient.ts (17 async), Tauri generate_handler (17 commands): all consistent.
+- graphify.exe update: completed successfully, graph up to date.
+- All 33 TypeScript tests pass.
 
-**All 33 TypeScript tests pass.**
-
-Previous routine (#18): Phase 5 agent preset bug fix (default_profiles + load_profile + 3 Rust test files).
+Previous routine (#19): clean sweep, same result.
 
 ---
 
