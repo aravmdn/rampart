@@ -233,7 +233,14 @@ describe("tauri daemon client", () => {
     });
     const stopped = await tauriDaemonClient.stopSession("sess-1");
 
-    expect(invoke).toHaveBeenCalledWith("launch_session", expect.anything());
+    expect(invoke).toHaveBeenCalledWith("launch_session", {
+      request: {
+        projectPath: "C:\\projects\\test",
+        agentId: "claude-code",
+        profileId: "claude-code.standard",
+        isolationMode: "windows-native",
+      },
+    });
     expect(launched.id).toBe("sess-1");
     expect(launched.status).toBe("active");
     expect(launched.agentId).toBe("claude-code");  // "ClaudeCode" → "claude-code"
