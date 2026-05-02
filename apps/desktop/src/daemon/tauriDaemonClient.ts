@@ -83,6 +83,7 @@ type RawHistoryEntry = {
     status: string;
     profile_id: string;
     project_path: string;
+    agent_tool?: RawAgentTool | null;
     started_at_ms: number;
     ended_at_ms: number | null;
   };
@@ -224,11 +225,32 @@ function mapLaunchContext(raw: RawLaunchContext): LaunchContext {
   };
 }
 
+type RawAgentTool = string | { Custom: { id: string; display_name?: string | null } };
+
+function mapAgentTool(raw: RawAgentTool | undefined | null): string | null {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    const map: Record<string, string> = {
+      ClaudeCode: "claude-code",
+      Codex: "codex",
+      Cursor: "cursor",
+      Copilot: "copilot",
+      Aider: "aider",
+      Goose: "goose",
+      OpenCode: "opencode",
+      GeminiCli: "gemini",
+    };
+    return map[raw] ?? raw.toLowerCase();
+  }
+  return raw.Custom?.id ?? null;
+}
+
 function mapSessionState(raw: {
   id: string;
   status: string;
   profile_id: string;
   project_path: string;
+  agent_tool?: RawAgentTool | null;
   ended_at_ms?: number | null;
 }): SessionState {
   const statusMap: Record<string, SessionState["status"]> = {
@@ -243,7 +265,7 @@ function mapSessionState(raw: {
     id: raw.id,
     status: statusMap[raw.status] ?? "failed",
     profileId: raw.profile_id,
-    agentId: null,
+    agentId: mapAgentTool(raw.agent_tool),
     projectPath: raw.project_path,
   };
 }
@@ -394,7 +416,7 @@ export const tauriDaemonClient: DaemonApi = {
         id: entry.session.id,
         status: mapSessionState(entry.session).status,
         profileId: entry.session.profile_id,
-        agentId: null,
+        agentId: mapAgentTool(entry.session.agent_tool),
         projectPath: entry.session.project_path,
         startedAtMs: entry.session.started_at_ms,
         endedAtMs: entry.session.ended_at_ms,

@@ -212,12 +212,14 @@ describe("tauri daemon client", () => {
     invoke.mockResolvedValueOnce({
       id: "sess-1",
       status: "running",
+      agent_tool: "ClaudeCode",
       profile_id: "claude-code.standard",
       project_path: "C:\\projects\\test",
     });
     invoke.mockResolvedValueOnce({
       id: "sess-1",
       status: "finished",
+      agent_tool: "Codex",
       profile_id: "claude-code.standard",
       project_path: "C:\\projects\\test",
     });
@@ -234,10 +236,44 @@ describe("tauri daemon client", () => {
     expect(invoke).toHaveBeenCalledWith("launch_session", expect.anything());
     expect(launched.id).toBe("sess-1");
     expect(launched.status).toBe("active");
+    expect(launched.agentId).toBe("claude-code");  // "ClaudeCode" → "claude-code"
     expect(launched.profileId).toBe("claude-code.standard");
     expect(launched.projectPath).toBe("C:\\projects\\test");
 
     expect(stopped.status).toBe("stopped");  // "finished" maps to "stopped"
+    expect(stopped.agentId).toBe("codex");   // "Codex" → "codex"
+  });
+
+  it("maps agent_tool enum variants to string IDs in launchSession", async () => {
+    const variants: Array<[unknown, string]> = [
+      ["ClaudeCode", "claude-code"],
+      ["Codex", "codex"],
+      ["Cursor", "cursor"],
+      ["Copilot", "copilot"],
+      ["Aider", "aider"],
+      ["Goose", "goose"],
+      ["OpenCode", "opencode"],
+      ["GeminiCli", "gemini"],
+      [{ Custom: { id: "my-agent" } }, "my-agent"],
+    ];
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+
+    for (const [agentTool, expectedId] of variants) {
+      invoke.mockResolvedValueOnce({
+        id: "s",
+        status: "running",
+        agent_tool: agentTool,
+        profile_id: "p",
+        project_path: "C:\\projects\\test",
+      });
+      const session = await tauriDaemonClient.launchSession({
+        projectPath: "C:\\projects\\test",
+        agentId: "x",
+        profileId: "p",
+      });
+      expect(session.agentId).toBe(expectedId);
+    }
   });
 
   it("maps getSyncStatus snake_case fields to camelCase", async () => {
