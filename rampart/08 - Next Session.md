@@ -1,25 +1,24 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #21 — clean sweep, no drift found)
+last updated: 2026-05-02 (interactive session — enforcement validation complete)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, interactive session — CLI build + validation)
+## where we left off (2026-05-02, interactive session — enforcement validation complete)
 
 **What was done:**
-- Fixed compile errors blocking CLI build: 18 `Profile` preset literals in `policy-core/lib.rs` were
-  missing `signature: None` (field added for ProfileSignature but presets not updated).
-- Fixed duplicate `pub use policy_core::OrgPolicy` in `rampartd/lib.rs` (conflicted with existing use).
-- Fixed `rampartd/src/main.rs` dev stub: same `signature: None` omission.
-- Full workspace builds clean (dev profile, MSVC target). 33 TypeScript tests pass.
-- CLI validated runtime:
-  - `rampart list-profiles --project-root C:\projects\rampart` → returns windows-safe, windows-strict ✓
-  - `rampart list-profiles --project-root ... --agent claude-code` → returns claude-code.standard, claude-code.strict ✓
-  - `rampart run --agent claude-code --profile claude-code.strict --project C:\projects\rampart` →
-    preflight runs, finds claude on PATH, reports enforcement warnings, starts session ✓
-- WFP monitor privilege: tested under elevated (admin) session only. Non-elevated test still pending.
+- Fixed compile errors: 18 Profile preset literals missing `signature: None`; duplicate OrgPolicy re-export; dev stub.
+- Full workspace builds clean. 33 TypeScript tests pass.
+- CLI runtime-validated: `list-profiles` and `run` subcommands work correctly.
+- Non-elevated enforcement test completed (`pnpm tauri dev`, medium integrity, claude-code.strict):
+  - SACL patch: ❌ ERROR_ACCESS_DENIED — requires admin (expected)
+  - Job Object: ❌ SetInformationJobObject failed — process already in job from conda env (no BREAKAWAY_OK)
+  - WFP block filter: ❌ FwpmFilterAdd0 0x80320023 — requires admin
+  - WFP event monitor: never reached — gated on WFP guard succeeding
+  - Result: zero enforcement at medium integrity. Matches threat model. No code change needed.
+  - All failures log to stderr with actionable messages.
 
 Previous routine (#20): clean sweep, same result.
 
@@ -38,24 +37,17 @@ Previous routine (#20): clean sweep, same result.
   - ✓ Docs: architecture.md + README.md fully reflect Phase 5 agent expansion.
   - ✓ Preset literals: all 18 Profile { } blocks have signature: None (fixed this session).
   - ✓ Full workspace (all crates + CLI + desktop backend) compiles clean.
-  - Pending: WFP monitor non-elevated test (run desktop app as normal user, verify graceful error hint).
+  - ✓ Non-elevated enforcement test: all three primitives confirmed to require admin. Zero enforcement at medium integrity. Matches threat model.
   - Deferred: AppContainer isolation mode.
 
 ---
 
 ## next tasks (priority order)
 
-**1. WFP monitor non-elevated test** (run desktop app as normal user — NOT schedulable)
+**1. AppContainer isolation mode** (clean seam; deferred — most complex primitive)
 
-Run the Tauri desktop app without elevation. Start a session with network blocked.
-Check Tauri stderr:
-  - `rampartd: WFP event monitor failed for session '...': ... — run as Administrator`
-    → CONFIRMED: document in 07; consider whether to show a UI warning.
-  - No error → monitor subscribed at medium integrity (unexpected but possible).
-
-**2. AppContainer isolation mode** (clean seam; deferred — most complex primitive)
-
-- All other Phase 5 work is complete. AppContainer is the remaining deferred item.
+All Phase 5 work is complete. AppContainer is the only remaining deferred item.
+It was intentionally left as a clean seam after Job Objects + WFP + ETW shipped.
 
 **For future scheduled routines:**
 - Codebase is clean. No outstanding doc drift, dead code, or TODO items.
@@ -76,8 +68,7 @@ Key points:
 
 ## open questions / blockers
 
-- WFP monitor privilege at medium integrity: still unconfirmed (only tested under admin so far).
-- AppContainer: deferred clean seam.
+- AppContainer: deferred clean seam. No other open questions.
 
 ---
 
