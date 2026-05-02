@@ -31,4 +31,13 @@ describe("desktop workspace skeleton", () => {
     const cargoToml = readFileSync(resolve(repoRoot, "Cargo.toml"), "utf8");
     expect(cargoToml).toContain('  "apps/desktop/src-tauri",');
   });
+
+  it("includes headless CLI crate in workspace", () => {
+    const cargoToml = readFileSync(resolve(repoRoot, "Cargo.toml"), "utf8");
+    expect(cargoToml).toContain('"apps/cli"');
+
+    const cliCargoToml = readFileSync(resolve(repoRoot, "apps", "cli", "Cargo.toml"), "utf8");
+    expect(cliCargoToml).toContain('name = "rampart"');
+    expect(cliCargoToml).toContain("rampartd");
+  });
 });
