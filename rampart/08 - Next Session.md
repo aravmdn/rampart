@@ -1,28 +1,31 @@
 # 08 NEXT SESSION
-last updated: 2026-05-02 (scheduled routine #15 — doc drift audit)
+last updated: 2026-05-02 (scheduled routine #16 — code quality sweep)
 
 This note is the single start-here for the next session. Update it at the end of every session
 so the next session opens cold with full context. Cross-reference: → 02 for full phase status.
 
 ---
 
-## where we left off (2026-05-02, scheduled routine #15)
+## where we left off (2026-05-02, scheduled routine #16)
 
-Routine #15 was a doc drift audit — no code changes; documentation only.
+Routine #16 was a code quality sweep — no architectural changes.
 
-**What was found and fixed:**
-- `docs/architecture.md` Phase 5 section was missing the per-agent capability matrix entry
-  (Cursor, Copilot, Goose, OpenCode, GeminiCli standard+strict presets; 12 Rust tests).
-  Added explicit Phase 5 paragraph covering all 8 agents and the 12 new tests.
-- `docs/architecture.md` Phase 2 entry only mentioned ClaudeCode/Codex/Aider for
-  `agent_profile_presets()` — added a cross-ref to Phase 5 to avoid confusion.
-- `README.md` agent list references were incomplete (missing Cursor, Copilot, GeminiCli):
-  - Overview paragraph updated: "Claude Code, Codex, or Cursor"
-  - Expected workflow step 3 updated: full 8-agent list
+**What was audited:**
+- All `.unwrap()` calls: only one exists, inside a test assert. Clean.
+- `todo!`, `unimplemented!`, `unreachable!` macros: none in production paths. Clean.
+- Debug `println!`/`eprintln!`: only in intentional diagnostic paths (ETW init, WFP monitor errors, CLI main). Appropriate.
+- TypeScript `console.log`/`console.warn` in production: none. Clean.
+- DaemonApi interface vs tauriDaemonClient vs mockDaemonClient: all 15 methods fully implemented in all three. Consistent.
+- Tauri command registration in main.rs vs DaemonApi: all 15 commands registered. Consistent.
+- Rust serde attributes: ProfileDetail + sub-structs all use `#[serde(rename_all = "camelCase")]`. Raw types in tauriDaemonClient.ts correctly use snake_case for non-camelCase structs (AgentCatalogEntry, ProfileSummary, SelectedLaunchConfig). Mapping layer is correct.
+- agent_tool_from_id() supports 8 agents: claude-code, codex, cursor, copilot, aider, goose, opencode, gemini.
 
-**No code changes. All 33 TypeScript tests still pass.**
+**One bug fixed:**
+- `apps/cli/src/main.rs` usage hint was missing `copilot` from the `--agent` list (7 of 8 listed). Fixed and pushed.
 
-Previous routine (#14): IsolationMode + SignatureStatus exhaustiveness test coverage.
+**All 33 TypeScript tests pass.**
+
+Previous routine (#15): doc drift audit — no code changes.
 
 ---
 
@@ -37,6 +40,7 @@ Previous routine (#14): IsolationMode + SignatureStatus exhaustiveness test cove
   - ✓ Per-agent capability matrices: all 8 AgentTool variants have tailored presets.
   - ✓ mockDaemonClient.ts audited: all method signatures match DaemonApi interface exactly.
   - ✓ Docs: architecture.md + README.md fully reflect Phase 5 agent expansion.
+  - ✓ CLI usage hint: all 8 agent IDs listed correctly (fixed routine #16).
   - Pending: WFP monitor privilege validation (requires interactive session).
   - Pending: CLI runtime validation (requires VS Dev Shell).
   - Deferred: AppContainer isolation mode.
@@ -44,15 +48,6 @@ Previous routine (#14): IsolationMode + SignatureStatus exhaustiveness test cove
 ---
 
 ## next tasks (priority order)
-
-**0. [routine-only] Doc audit complete; no further schedulable doc work identified**
-
-All public docs (README, AGENTS, architecture, roadmap, threat-model) are now consistent
-with the current implementation. vault notes 02, 06, 07, 08 are current.
-
-Routines going forward should:
-- Audit for any new doc drift as code evolves
-- OR perform a code-quality sweep (unused imports, dead code, mismatched field names)
 
 **1. WFP monitor privilege validation** (MUST be done in interactive session — NOT schedulable)
 
@@ -72,12 +67,16 @@ then check Tauri stderr for:
 
 - Defer until WFP monitor and CLI are runtime-validated.
 
+**For future scheduled routines:**
+- Codebase is clean. No outstanding doc drift, dead code, or TODO items.
+- Next schedulable sweep: audit for any new drift introduced by interactive sessions (after WFP/CLI validation).
+
 ---
 
-## competitive context (new — May 2026)
+## competitive context (May 2026)
 → Full analysis in `09 - Competitive Landscape.md`
 
-Key points to keep in mind:
+Key points:
 - **No competitor has Windows support.** Ash, Safehouse, hazmat are all macOS-only.
 - Anthropic shipped Claude Code sandboxing (macOS/Linux only) — validates the problem, doesn't close our moat.
 - Microsoft Agent Governance Toolkit (April 2026) targets agent *builders*, not individual devs — different buyer.
