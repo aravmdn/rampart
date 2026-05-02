@@ -378,4 +378,121 @@ describe("tauri daemon client", () => {
     expect(report.diagnostics[1]!.severity).toBe("warning");
     expect(report.diagnostics[1]!.label).toBe("Network blocked");
   });
+
+  it("saveProfile passes profile to correct tauri command", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const profile = {
+      id: "claude-code.strict",
+      displayName: "Claude Code Strict",
+      detail: "Strict profile.",
+      signatureStatus: "unsigned" as const,
+      filesystem: { readableRoots: ["C:\\projects"], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny" as const, allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "allow" as const, allowedCommands: ["git"], blockedCommands: [] },
+    };
+    await tauriDaemonClient.saveProfile(profile);
+
+    expect(invoke).toHaveBeenCalledWith("save_profile", { profile });
+  });
+
+  it("signProfile passes profileId and key to correct tauri command", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    await tauriDaemonClient.signProfile("claude-code.strict", "base64key==");
+
+    expect(invoke).toHaveBeenCalledWith("sign_profile", { profileId: "claude-code.strict", signingKeyB64: "base64key==" });
+  });
+
+  it("loadRemoteProfile maps signature_status from Rust snake_case", async () => {
+    invoke.mockResolvedValue({
+      id: "remote.strict",
+      displayName: "Remote Strict",
+      detail: "Fetched remotely.",
+      signature_status: "valid",
+      filesystem: { readableRoots: [], writableRoots: [], blockedRoots: [] },
+      network: { defaultAction: "deny", allowedHosts: [], blockedHosts: [] },
+      process: { defaultAction: "allow", allowedCommands: [], blockedCommands: [] },
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const profile = await tauriDaemonClient.loadRemoteProfile("https://example.com/policy.json");
+
+    expect(invoke).toHaveBeenCalledWith("load_remote_profile", { url: "https://example.com/policy.json" });
+    expect(profile.signatureStatus).toBe("valid");
+    expect(profile.id).toBe("remote.strict");
+  });
+
+  it("configureSync passes config to correct tauri command", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const config = { endpointUrl: "https://audit.example.com", token: "tok-abc", stripPaths: true };
+    await tauriDaemonClient.configureSync(config);
+
+    expect(invoke).toHaveBeenCalledWith("configure_sync", { config });
+  });
+
+  it("syncAuditEvents maps snake_case SyncStatus response", async () => {
+    invoke.mockResolvedValue({
+      configured: true,
+      queue_depth: 0,
+      last_sync_at_ms: 1700001234000,
+      last_error: "timeout",
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const status = await tauriDaemonClient.syncAuditEvents();
+
+    expect(invoke).toHaveBeenCalledWith("sync_audit_events");
+    expect(status.configured).toBe(true);
+    expect(status.queueDepth).toBe(0);
+    expect(status.lastSyncAtMs).toBe(1700001234000);
+    expect(status.lastError).toBe("timeout");
+  });
+
+  it("configureOrgPolicyUrl passes url to correct tauri command", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    await tauriDaemonClient.configureOrgPolicyUrl("https://policy.example.com/org.json");
+
+    expect(invoke).toHaveBeenCalledWith("configure_org_policy_url", { url: "https://policy.example.com/org.json" });
+  });
+
+  it("currentOrgPolicy returns null when no policy is cached", async () => {
+    invoke.mockResolvedValue(null);
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const policy = await tauriDaemonClient.currentOrgPolicy();
+
+    expect(invoke).toHaveBeenCalledWith("current_org_policy");
+    expect(policy).toBeNull();
+  });
+
+  it("currentOrgPolicy maps cached org policy snake_case fields to camelCase", async () => {
+    invoke.mockResolvedValue({
+      id: "cached-policy",
+      name: "Cached Policy",
+      description: null,
+      scope: { agent_types: ["claude-code"], project_path_glob: null },
+      policy: {
+        filesystem: { readable_roots: ["C:\\projects"], writable_roots: [], blocked_roots: [] },
+        network: { default_action: "allow", allowed_hosts: [], blocked_hosts: [] },
+        process: { default_action: "allow", allowed_commands: [], blocked_commands: [] },
+      },
+      signature: null,
+    });
+
+    const { tauriDaemonClient } = await import("./tauriDaemonClient");
+    const policy = await tauriDaemonClient.currentOrgPolicy();
+
+    expect(policy).not.toBeNull();
+    expect(policy!.id).toBe("cached-policy");
+    expect(policy!.scope!.agentTypes).toEqual(["claude-code"]);
+    expect(policy!.scope!.projectPathGlob).toBeNull();
+    expect(policy!.policy.filesystem.readableRoots).toEqual(["C:\\projects"]);
+  });
 });
