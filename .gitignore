@@ -26,7 +26,15 @@ target/
 !AGENTS.md
 !CLAUDE.md
 !SKILLS.md
+!CONTRIBUTING.md
 !docs/
 !docs/**/*.md
 !docs/adr/**/*.md
 reference/claude-code-private/
+rampart/
+.rampart/
+.rampart-l2-scratch/
+.rampart-l3-scratch/
+graphify-out/
+*.etl
+*.png
