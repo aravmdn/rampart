@@ -153,8 +153,8 @@ impl WindowsJob {
             Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
             System::{
                 JobObjects::{
-                    AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicLimitInformation,
-                    SetInformationJobObject, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+                    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
                 },
                 Threading::{OpenProcess, PROCESS_ALL_ACCESS},
@@ -167,14 +167,14 @@ impl WindowsJob {
                 return Err(JobError::CreateFailed);
             }
 
-            let mut limits: JOBOBJECT_BASIC_LIMIT_INFORMATION = zeroed();
-            limits.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = zeroed();
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 
             let ok = SetInformationJobObject(
                 job,
-                JobObjectBasicLimitInformation,
+                JobObjectExtendedLimitInformation,
                 &limits as *const _ as *const core::ffi::c_void,
-                size_of::<JOBOBJECT_BASIC_LIMIT_INFORMATION>() as u32,
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             );
             if ok == 0 {
                 CloseHandle(job);
@@ -398,7 +398,7 @@ pub fn patch_project_low_integrity_label(path: &std::path::Path) -> Result<(), S
         let sid_len = GetLengthSid(low_sid) as usize;
         // Buffer: ACL header (8) + ACE header (4) + ACCESS_MASK (4) + SID bytes.
         let acl_size = size_of::<ACL>() + 8 + sid_len;
-        let acl_words = (acl_size + 3) / 4;
+        let acl_words = acl_size.div_ceil(4);
         let mut acl_buf: Vec<u32> = vec![0u32; acl_words];
         let acl_ptr = acl_buf.as_mut_ptr() as *mut ACL;
 
@@ -592,6 +592,10 @@ impl WfpNetworkGuard {
             };
 
             let mut filter: FWPM_FILTER0 = zeroed();
+            // FwpmFilterAdd0 requires a non-null display name; provide one.
+            let mut display_name: Vec<u16> =
+                "Rampart outbound block\0".encode_utf16().collect();
+            filter.displayData.name = display_name.as_mut_ptr();
             filter.numFilterConditions = 1;
             filter.filterCondition = &condition as *const FWPM_FILTER_CONDITION0
                 as *mut FWPM_FILTER_CONDITION0;
@@ -859,7 +863,7 @@ impl WfpEventMonitor {
 
         unsafe {
             let mut engine: windows_sys::Win32::Foundation::HANDLE = 0;
-            let mut session: FWPM_SESSION0 = zeroed();
+            let session: FWPM_SESSION0 = zeroed();
             // flags = 0: non-dynamic. Objects persist until explicitly deleted or
             // the engine handle is closed. The handle is our cleanup mechanism.
             let err = FwpmEngineOpen0(
