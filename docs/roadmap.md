@@ -36,16 +36,14 @@ Reference-driven priorities inside this phase:
 
 ## Phase 3 — Windows enforcement engine (complete)
 
-MVP gate closed. Enforcement code is shipped and runtime-validated on Windows.
+MVP gate closed. Enforcement code is shipped and runtime-validated on Windows under admin.
 
-- ✓ Process containment: Job Objects with `KILL_ON_JOB_CLOSE` contain the agent process tree — runtime verified
-- ✓ Network enforcement: WFP per-app-ID outbound BLOCK filters on IPv4 + IPv6, auto-cleanup on session end — runtime verified
+- ✓ Process containment: Job Objects with `KILL_ON_JOB_CLOSE` contain the agent process tree — runtime verified. Note: the initial implementation used `BasicLimitInformation` (class 2); a bug requiring `ExtendedLimitInformation` (class 9) on Windows 11 was surfaced and fixed during this validation run.
+- ✓ Network enforcement: WFP per-app-ID outbound BLOCK filters on IPv4 + IPv6, auto-cleanup on session end — runtime verified. Note: a bug where `FwpmFilterAdd0` returned `FWP_E_NULL_DISPLAY_NAME` due to a null `filter.displayData.name` was surfaced and fixed during this validation run.
 - ✓ Filesystem write scoping: Low Integrity token + project root SACL patch — runtime verified
 - ✓ Audit trail: ETW provider emitting all session and audit events — runtime verified
 - ✓ WSL2 isolation mode: stronger enforcement via Linux VM for users with WSL2 installed
-- ✓ Runtime end-to-end validation: enforcement mechanisms tested on Windows with admin rights
-
-Known limitation: OS-level blocks (WFP, Job, SACL) do not stream back as violation events to the session console in Windows Native mode. Blocks fire correctly; UI feedback is silent. WSL2 mode does surface events. Candidate for Phase 4 follow-up.
+- ✓ Runtime end-to-end validation: all five enforcement mechanisms pass under admin on Windows 11
 
 Reference-driven priorities inside this phase:
 
@@ -86,7 +84,7 @@ Reference-driven priorities inside this phase:
 ## Phase 5 — Headless, CI, and broader engine support (in progress)
 
 - ✓ **Headless `rampart run` CLI**: `apps/cli/` binary reuses `RampartService` for full enforcement. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` — preflight to stderr, JSONL events to stdout, clean Ctrl+C shutdown. `rampart list-profiles` enumerates agent-specific presets.
-- ✓ **WFP violation streaming**: `FwpmNetEventSubscribe0` subscription surfaces blocked connections in the session console while a session is live; events are drained and persisted at `stop_session`. (Medium-integrity privilege validation pending runtime test.)
+- **WFP violation streaming** (pipeline complete; end-to-end pending): `FwpmNetEventSubscribe0` subscription and `WfpEventMonitor` wiring are in place. The filter installs and subscribes correctly under admin. End-to-end validation against a real agent initiating outbound traffic is not yet confirmed — test instrumentation used a `.cmd` shim while `resolve_app_path` hardcodes `.exe`, causing filter and process image to diverge. Pipeline verified; block-triggers-event not yet exercised in normal use.
 - ✓ **Per-agent capability matrices**: `agent_profile_presets()` in policy-core now returns tailored standard+strict profiles for Cursor, Copilot, Goose, OpenCode, and GeminiCli in addition to ClaudeCode/Codex/Aider. Each standard profile allows the agent's known API endpoints; strict profiles deny network entirely. 12 Rust unit tests added.
 - AppContainer isolation mode for stronger process-level sandboxing
 - Enterprise controls where justified

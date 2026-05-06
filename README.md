@@ -148,7 +148,7 @@ Phases 1–4 are complete. Phase 5 is in progress.
 
 **The MVP enforcement loop is complete and runtime-verified.** A user can pick an agent, project, and profile; launch through Rampart; and have real OS-level enforcement applied to the session.
 
-One known limitation in Windows Native mode: enforcement fires at the OS level but blocked-action events do not stream back to the session console. The blocks are real; the UI feedback loop is silent. WSL2 mode does surface events. This gap is tracked for a future phase.
+The WFP violation streaming pipeline is now wired and the filter installs correctly under admin. End-to-end validation against a real agent initiating outbound traffic is still pending: the test instrumentation used a `.cmd` shim while `resolve_app_path` resolves agent commands via SearchPathW with a hardcoded `.exe` extension, causing the filter and spawned process image to diverge. Blocks fire correctly at the OS level; pipeline is verified; end-to-end event delivery to the session console is not yet exercised in normal use.
 
 **Phase 4 — Team and distribution features (complete)**
 
@@ -166,8 +166,8 @@ One known limitation in Windows Native mode: enforcement fires at the OS level b
 | Item | Phase | Status |
 |------|-------|--------|
 | Headless `rampart run` CLI | 5 | **Complete** — `apps/cli/` binary; preflight → stderr, JSONL events → stdout, Ctrl+C clean shutdown |
-| Violation event streaming in Windows Native mode | 5 | Open — blocks fire at OS level but don't surface in session console; WSL2 mode surfaces events |
-| WFP event monitor privilege | 5 | Open — unknown whether `FwpmNetEventSubscribe0` works at Medium integrity; degrades silently on failure |
+| Violation event streaming in Windows Native mode | 5 | Pipeline wired and verified; end-to-end block-triggers-event not yet exercised against an agent that initiates outbound traffic in normal use |
+| WFP event monitor privilege | 5 | Confirmed: subscribes successfully under admin. The filter installation bug (null `displayData.name`) that previously prevented this from being testable was fixed during the Phase 3 validation run. |
 | AppContainer isolation mode | 5 | Deferred — seam preserved in engine adapter layer |
 | Per-agent capability matrices | 5 | **Complete** — Cursor, Copilot, Goose, OpenCode, GeminiCli standard+strict presets in `policy-core`; 12 unit tests |
 | Installer / packaging | — | Not started |
@@ -178,10 +178,12 @@ Rampart currently has a real workspace skeleton for the documented modules.
 
 ### Prerequisites
 
-- Node.js
-- pnpm
-- Rust via `rustup`
-- Visual Studio C++ build tools for the Rust MSVC toolchain on Windows
+- Node.js 20 or later
+- pnpm 9.x
+- Rust via `rustup` with the `x86_64-pc-windows-msvc` target installed
+- Visual Studio 2022 Build Tools with the "Desktop development with C++" workload
+
+If the MSVC linker is not present, `cargo build` will fail with `LNK1104`. To fix, install the workload above via the Visual Studio Installer and confirm `link.exe` is on the PATH (typically through a Developer Command Prompt or by running `rustup target add x86_64-pc-windows-msvc`).
 
 ### Install dependencies
 

@@ -98,72 +98,107 @@ is disallowed by default. Well-behaved agents will not attempt this.
 
 ---
 
-### Filesystem write containment — directory ACLs (planned, not yet applied)
+### Filesystem write containment — Low Integrity token + project root SACL
 
-**Intended behavior:**
-At session start, Rampart will add a temporary DACL deny-write entry on directories
-outside the project root for the agent process SID. At session end, the entry is
-removed.
+**What it does:**
+At session start, Rampart sets the agent's process token to Low Integrity (S-1-16-4096)
+via `set_process_low_integrity()`. The OS denies writes to all Medium-or-higher integrity
+paths — user profile, system directories, temp — without custom hooks. `patch_project_low_integrity_label()`
+sets a Low mandatory label on the project root so the agent can write to its own working
+directory while remaining blocked everywhere else.
 
-**Current status:** Not yet implemented. Filesystem enforcement is reported as
-`Unsupported` in the capability snapshot. Policy filesystem rules are stored in the
-profile but not enforced at the OS level.
-
----
-
-### Network enforcement — Windows Filtering Platform (planned, not yet applied)
-
-**Intended behavior:**
-Rampart will add a per-PID WFP filter that blocks outbound connections to hosts not in
-the profile's `allowed_hosts` list. WFP rules are applied at session start and removed
-at session end. No kernel driver is required for userspace WFP callouts.
-
-**Current status:** Not yet implemented. Network enforcement is reported as
-`Unsupported` in the capability snapshot. Policy network rules are stored in the profile
-but not enforced.
+**Current status:** Implemented and runtime-verified. Reported as `Supported` in the
+capability snapshot.
 
 ---
 
-### ETW audit trail (planned, not yet wired)
+### Network enforcement — Windows Filtering Platform
 
-**Intended behavior:**
-ETW providers for file I/O (`Microsoft-Windows-Kernel-File`) and network
-(`Microsoft-Windows-Kernel-Network`) will feed events into the existing `AuditEventKind`
-taxonomy. ETW is **audit only** — it does not block operations. Blocking is handled by
-ACLs and WFP before the operation completes.
+**What it does:**
+`WfpNetworkGuard` opens a dynamic WFP engine session and installs per-application-ID
+outbound BLOCK filters on both IPv4 and IPv6 ALE connect layers. The NT device path is
+resolved from the Win32 executable path via `QueryDosDeviceW`. Filters auto-remove when
+the session handle is dropped. No kernel driver is required.
 
-**Current status:** Not yet wired. The `AuditEventKind` taxonomy is defined and ready;
-ETW ingestion is the missing piece.
+**Current status:** Implemented and runtime-verified under admin. Reported as `Supported`
+in the capability snapshot.
+
+**Known edge case:** `resolve_app_path` resolves agent commands via `SearchPathW` with a
+hardcoded `.exe` extension. Agent shims distributed as `.cmd` or `.bat` would result in
+the WFP filter being applied to the wrong image path. This is not a defense gap against
+well-behaved agents (which are launched as `.exe` processes) but is worth noting for
+shim-style deployments.
+
+**Violation streaming:** The `WfpEventMonitor` subscription pipeline is wired and verified
+under admin. End-to-end validation (a blocked outbound connection surfaces as a JSONL event
+in the session console) is not yet confirmed: test instrumentation used a `.cmd` shim,
+causing the filter and spawned process image to diverge. Pipeline complete; end-to-end
+pending.
+
+---
+
+### ETW audit trail
+
+**What it does:**
+`EtwAuditProvider` registers a Rampart ETW provider (GUID 7E5A6B4C-...) and emits every
+session lifecycle and audit event via `EventWriteString`. Events are capturable with
+standard Windows tracing tools. ETW is audit-only — it does not block operations.
+
+**Current status:** Implemented and runtime-verified.
 
 ---
 
 ## Capability snapshot honesty
 
 Rampart's preflight check and launcher UI reflect actual enforcement state, not an
-aspirational one. Until ACLs and WFP are applied, the capability snapshot reports:
+aspirational one. The current capability snapshot reports:
 
 | Capability             | Status      |
 |------------------------|-------------|
 | Process enforcement    | Supported   |
 | Process termination    | Supported   |
-| Filesystem enforcement | Unsupported |
-| Network enforcement    | Unsupported |
+| Filesystem enforcement | Supported   |
+| Network enforcement    | Supported   |
 
-Users see this in the launcher before every session. Profiles with filesystem or network
-rules generate a "policy compatibility" warning in the preflight report explaining that
-the rules are present but not currently enforced.
+Users see this in the launcher before every session. WSL2 mode is surfaced as an opt-in
+stronger isolation option when WSL2 is detected at preflight.
+
+**Known cosmetic gap:** In WSL2 isolation mode, `detect_capabilities` still returns the
+Windows-native capability snapshot rather than the WSL2 Linux capabilities. Preflight
+in WSL2 mode therefore surfaces Windows-native capability warnings. This is a UI artifact
+with no enforcement consequence.
 
 ---
 
-## Fast-follow: WSL2 stronger isolation mode
+## WSL2 stronger isolation mode (Phase 3, complete)
 
-For users with Hyper-V available, running the agent inside WSL2 provides Linux-native
-enforcement (Landlock filesystem isolation + seccomp syscall filtering) via the existing
-`engine-greywall` adapter. This is a Hyper-V-boundary isolation, which is meaningfully
-stronger than Win32 Job Objects alone.
+For users with Hyper-V available, running the agent inside WSL2 provides a Hyper-V
+boundary, which is meaningfully stronger than Win32 Job Objects alone. `detect_wsl2()`
+probes at preflight. `Wsl2Enforcer` reports `Supported` capabilities. `LocalProcessRunner`
+wraps the command as `wsl --cd <linux_path> -- <command>` and skips Win32 enforcement
+hooks that have no effect inside the VM.
 
-Rampart will detect WSL2 availability at preflight and surface "Run in WSL2 (stronger
-isolation)" as an opt-in mode in the launcher.
+WSL2 mode is surfaced as an opt-in stronger isolation option in the launcher when WSL2
+is detected. Runtime-verified (2026-05-06).
+
+---
+
+## Known gaps and edge cases
+
+The following are documented edge cases with no current mitigation plan. They do not
+change the accidental-overreach threat model framing but are worth knowing.
+
+- **`resolve_app_path` hardcodes `.exe`**: agent commands are resolved via `SearchPathW`
+  with a hardcoded `.exe` extension. Agent shims distributed as `.cmd` or `.bat` files
+  would have WFP filters applied to the wrong image path, leaving network enforcement
+  ineffective for that agent. This is not a defense gap against well-behaved agents
+  (all first-class supported agents are launched as `.exe` processes) but shim-style
+  deployments should be aware of this.
+
+- **WSL2 capability snapshot reuses Windows-native preflight**: `detect_capabilities`
+  returns the Windows-native snapshot regardless of isolation mode. Preflight in WSL2
+  mode therefore surfaces Windows-native capability warnings rather than WSL2-specific
+  ones. Cosmetic only; enforcement is not affected.
 
 ---
 
