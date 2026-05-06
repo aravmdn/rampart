@@ -1,9 +1,9 @@
 use policy_core::{
-    compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent, AuditEventKind,
-    AuditOutcome, CapabilitySupport, CompiledPolicy, DefaultAction, EngineCapabilitySnapshot,
-    FilesystemCapabilitySnapshot, FilesystemPolicy, NetworkCapabilitySnapshot, NetworkPolicy,
-    Policy, ProcessCapabilitySnapshot, ProcessPolicy, Profile, Session, SessionStatus,
-    ViolationEvent, ViolationKind,
+    compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent, AuditEventCategory,
+    AuditEventKind, AuditOutcome, CapabilitySupport, CompiledPolicy, DefaultAction,
+    EngineCapabilitySnapshot, FilesystemCapabilitySnapshot, FilesystemPolicy, IsolationMode,
+    NetworkCapabilitySnapshot, NetworkPolicy, Policy, ProcessCapabilitySnapshot, ProcessPolicy,
+    Profile, Session, SessionStatus, ViolationEvent, ViolationKind,
 };
 use serde_json::json;
 
@@ -113,6 +113,7 @@ fn canonical_entities_construct_cleanly() {
                 blocked_commands: vec![],
             },
         },
+        signature: None,
     };
 
     let _session = Session {
@@ -124,6 +125,7 @@ fn canonical_entities_construct_cleanly() {
         status: SessionStatus::Running,
         started_at_ms: 100,
         ended_at_ms: None,
+        isolation_mode: IsolationMode::WindowsNative,
     };
 
     let violation = ViolationEvent {
@@ -137,6 +139,7 @@ fn canonical_entities_construct_cleanly() {
         rule_label: "Read access limited to selected project root.".into(),
         reason: "outside readable roots".into(),
         platform_note: Some("Windows runtime proof fixture.".into()),
+        explanation: None,
     };
 
     let _audit = AuditEvent {
@@ -144,6 +147,7 @@ fn canonical_entities_construct_cleanly() {
         sequence: 2,
         occurred_at_ms: 102,
         kind: AuditEventKind::ViolationRecorded,
+        category: AuditEventCategory::PolicyEnforcement,
         outcome: AuditOutcome::Blocked,
         message: "blocked secret read".into(),
         violation: Some(violation),

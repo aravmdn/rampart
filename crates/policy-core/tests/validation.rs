@@ -42,6 +42,7 @@ fn reject_duplicate_filesystem_roots() {
                 blocked_commands: vec![],
             },
         },
+        signature: None,
     }
     .validate();
 

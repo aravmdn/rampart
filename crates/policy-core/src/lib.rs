@@ -1553,8 +1553,15 @@ fn glob_match_recursive(pattern: &str, input: &str, p_idx: usize, i_idx: usize) 
 
     if p_idx < pattern_chars.len() && pattern_chars[p_idx] == '*' {
         if p_idx + 1 < pattern_chars.len() && pattern_chars[p_idx + 1] == '*' {
+            // If ** is followed by a separator in the pattern, also try skipping that separator
+            // so that ** can match zero path segments (e.g. "**/foo" matches "foo").
+            let skip_sep = p_idx + 2 < pattern_chars.len()
+                && (pattern_chars[p_idx + 2] == '/' || pattern_chars[p_idx + 2] == '\\');
             for j in i_idx..=input_chars.len() {
                 if glob_match_recursive(pattern, input, p_idx + 2, j) {
+                    return true;
+                }
+                if skip_sep && glob_match_recursive(pattern, input, p_idx + 3, j) {
                     return true;
                 }
             }
@@ -1580,7 +1587,10 @@ fn glob_match_recursive(pattern: &str, input: &str, p_idx: usize, i_idx: usize) 
         return glob_match_recursive(pattern, input, p_idx + 1, i_idx + 1);
     }
 
-    if pattern_chars[p_idx] == input_chars[i_idx] {
+    let pc = pattern_chars[p_idx];
+    let ic = input_chars[i_idx];
+    let sep_match = (pc == '/' || pc == '\\') && (ic == '/' || ic == '\\');
+    if sep_match || pc == ic {
         return glob_match_recursive(pattern, input, p_idx + 1, i_idx + 1);
     }
 
@@ -1947,6 +1957,10 @@ mod merge_tests {
 
     #[test]
     fn empty_org_policy_leaves_local_unchanged() {
+        // An org policy with Policy::default() has default_action=Deny (the strictest), empty
+        // allow-lists (intersect → local preserved), and empty deny-lists (union → local preserved).
+        // The only thing that changes is default_action: stricter_default(Allow, Deny) = Deny.
+        // Lists and filesystem are fully preserved.
         let local_policy = Policy {
             network: NetworkPolicy {
                 default_action: DefaultAction::Allow,
@@ -1967,7 +1981,15 @@ mod merge_tests {
         let local = make_local(local_policy.clone());
         let org = make_org(Policy::default());
         let merged = resolve_effective_policy(&local, &org);
-        assert_eq!(merged.policy, local_policy);
+        // default_action: org Deny floor overrides local Allow
+        assert_eq!(merged.policy.network.default_action, DefaultAction::Deny);
+        assert_eq!(merged.policy.process.default_action, DefaultAction::Deny);
+        // lists are preserved (empty org allow-list = org has no restriction)
+        assert_eq!(merged.policy.network.allowed_hosts, local_policy.network.allowed_hosts);
+        assert_eq!(merged.policy.network.blocked_hosts, local_policy.network.blocked_hosts);
+        assert_eq!(merged.policy.process.allowed_commands, local_policy.process.allowed_commands);
+        assert_eq!(merged.policy.process.blocked_commands, local_policy.process.blocked_commands);
+        assert_eq!(merged.policy.filesystem, local_policy.filesystem);
         assert_eq!(merged.id, "local-profile");
         assert_eq!(merged.name, "Local Profile");
     }

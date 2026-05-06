@@ -16,7 +16,6 @@ use rampartd::{
     SyncConfig, SyncStatus,
 };
 use serde::Serialize;
-use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 

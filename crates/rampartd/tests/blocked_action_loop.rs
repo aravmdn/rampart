@@ -29,6 +29,7 @@ fn sample_profile() -> Profile {
                 blocked_commands: vec!["powershell".into()],
             },
         },
+        signature: None,
     }
 }
 
@@ -71,7 +72,7 @@ fn blocked_action_loop_records_launch_then_normalized_blocked_read() {
     let blocked_audit = events
         .iter()
         .find_map(|event| match event {
-            SessionEventRecord::Audit(audit) if audit.kind == AuditEventKind::ViolationRecorded => {
+            SessionEventRecord::Audit(audit) if audit.kind == AuditEventKind::FilesystemBlocked => {
                 Some(audit)
             }
             _ => None,
@@ -87,10 +88,10 @@ fn blocked_action_loop_records_launch_then_normalized_blocked_read() {
         })
         .expect("violation should exist");
 
-    assert_eq!(violation.rule_id, "fs.read.project-root-only");
+    assert_eq!(violation.rule_id, "fs.scope.project-root-only");
     assert_eq!(
         violation.rule_label,
-        "Read access limited to selected project root."
+        "Filesystem access limited to selected project root."
     );
     assert_eq!(
         violation.reason,

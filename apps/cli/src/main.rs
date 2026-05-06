@@ -1,15 +1,15 @@
-/// Rampart headless CLI — `rampart run`
-///
-/// Launches an AI agent under Rampart enforcement without the GUI. All Windows
-/// enforcement primitives (Job Objects, WFP, Low Integrity, ETW) apply exactly
-/// as in the desktop app because they run through the same `RampartService`.
-///
-/// Usage:
-///   rampart run --agent <id> --profile <id> --project <path> [--wsl2]
-///
-/// Preflight results are printed to stderr. Audit events are printed to stdout
-/// as JSONL (one JSON object per line). The process exits once the agent exits
-/// or Ctrl+C is received.
+//! Rampart headless CLI — `rampart run`
+//!
+//! Launches an AI agent under Rampart enforcement without the GUI. All Windows
+//! enforcement primitives (Job Objects, WFP, Low Integrity, ETW) apply exactly
+//! as in the desktop app because they run through the same `RampartService`.
+//!
+//! Usage:
+//!   rampart run --agent <id> --profile <id> --project <path> [--wsl2]
+//!
+//! Preflight results are printed to stderr. Audit events are printed to stdout
+//! as JSONL (one JSON object per line). The process exits once the agent exits
+//! or Ctrl+C is received.
 
 #[cfg(target_os = "windows")]
 use engine_windows::WindowsEnforcer;
@@ -43,6 +43,20 @@ fn usage() -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
+    // --help / -h: print usage and exit 0
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        eprintln!("Usage: rampart run --agent <id> --profile <id> --project <path> [--wsl2]");
+        eprintln!();
+        eprintln!("  --agent   Agent ID (claude-code, codex, aider, goose, opencode, gemini, cursor, copilot)");
+        eprintln!("  --profile Profile ID from the preset list (use --list-profiles to see options)");
+        eprintln!("  --project Absolute path to the project directory to protect");
+        eprintln!("  --wsl2    Run agent inside WSL2 (stronger isolation; requires WSL2 installed)");
+        eprintln!();
+        eprintln!("Other subcommands:");
+        eprintln!("  rampart list-profiles --agent <id> --project <path>");
+        return;
+    }
 
     if args.len() < 2 {
         usage();

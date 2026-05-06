@@ -375,15 +375,15 @@ fn blocked_network_event(event: RawEngineEvent) -> NormalizedEngineEvent {
 fn current_platform_name() -> &'static str {
     #[cfg(target_os = "windows")]
     {
-        return "windows";
+        "windows"
     }
     #[cfg(target_os = "macos")]
     {
-        return "macos";
+        "macos"
     }
     #[cfg(target_os = "linux")]
     {
-        return "linux";
+        "linux"
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {

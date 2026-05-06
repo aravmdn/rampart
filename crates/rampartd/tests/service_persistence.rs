@@ -107,7 +107,7 @@ fn session_history_persists_stop_and_blocked_events() {
         record
             .events
             .iter()
-            .any(|event| matches!(event.kind, AuditEventKind::ViolationRecorded)),
+            .any(|event| matches!(event.kind, AuditEventKind::FilesystemBlocked)),
         "history should include blocked events"
     );
     assert!(

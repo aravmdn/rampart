@@ -28,6 +28,7 @@ fn sample_profile() -> Profile {
                 blocked_commands: vec!["powershell".into()],
             },
         },
+        signature: None,
     }
 }
 
