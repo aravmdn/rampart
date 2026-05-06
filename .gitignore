@@ -38,3 +38,4 @@ rampart/
 graphify-out/
 *.etl
 *.png
+apps/desktop/src-tauri/gen/
