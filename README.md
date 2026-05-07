@@ -1,257 +1,115 @@
 # Rampart
 
-Local-first blast-radius control for AI coding agents.
-
-Rampart is a Windows-first security product for developers who want to run AI coding agents with enforced least privilege over filesystem, network, and process execution. It wraps agent execution in real controls, captures what happened during a session, and explains what was blocked and why.
-
-The intended desktop product should feel like a local launch-and-control console for agent sessions. A user picks a project, chooses an installed agent such as Claude Code, Codex, or Cursor, selects a profile, launches the session through Rampart, and then watches live session state, blocked actions, and history. Rampart does not need to replace every agent's native interface on day one in order to be useful.
+Rampart is a Windows-first desktop application that runs AI coding agents under enforced least privilege. It applies OS-level controls — Windows Job Objects, Low Integrity tokens, and WFP network filters — to constrain what an agent can read, write, connect to, and spawn, then surfaces live audit events, blocked actions, and session history in a local GUI and headless CLI.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-1f2937.svg)](./LICENSE)
-[![Platform: Windows First](https://img.shields.io/badge/platform-Windows%20first-0f766e.svg)](#current-status)
-[![Architecture: Local First](https://img.shields.io/badge/architecture-local%20first-1d4ed8.svg)](#principles)
-[![Status: Phase 5](https://img.shields.io/badge/status-Phase%205-16a34a.svg)](#current-status)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0f766e.svg)](#architecture)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-f59e0b.svg)](docs/roadmap.md)
 
-## Overview
+---
 
-- [Why Rampart](#why-rampart)
-- [What It Does](#what-it-does)
-- [How It Works](#how-it-works)
-- [Execution Model](#execution-model)
-- [Principles](#principles)
-- [Current Status](#current-status)
-- [Getting Started](#getting-started)
-- [Repository Layout](#repository-layout)
-- [Documentation](#documentation)
-- [Public Documentation Policy](#public-documentation-policy)
+## Quick Start
+
+Prerequisites: Windows 10/11, Administrator shell, Node 20+, pnpm 9, Rust + MSVC build tools, at least one agent CLI (`claude`, `codex`, `aider`, etc.) on PATH.
+
+```powershell
+git clone https://github.com/rampart-dev/rampart.git
+cd rampart
+pnpm install
+pnpm dev:desktop   # run from an Administrator PowerShell
+```
+
+For the full walkthrough — prerequisites, CLI usage, troubleshooting — see [GETTING_STARTED.md](GETTING_STARTED.md).
+
+---
 
 ## Why Rampart
 
-AI coding agents usually inherit the full permissions of the developer session that launched them. In practice, that can mean reading secrets, writing outside the intended project scope, making outbound network requests, or leaving behind weak visibility into what they actually attempted.
+- **Real enforcement, not prompt instructions.** Controls are applied at the OS level via Job Objects, token integrity, and WFP filters. The agent cannot bypass them by ignoring a system prompt.
+- **Default-deny baseline.** Agents need explicit allow rules for filesystem paths, network hosts, and allowed child processes. Nothing is permitted by accident.
+- **Agent-agnostic.** Supports Claude Code, Codex, Aider, Cursor, Copilot, Goose, OpenCode, and Gemini CLI. Adding a new agent requires an adapter, not a rewrite.
+- **Local-first.** No account, no cloud service, no required backend. Session history, profiles, and audit events stay on the machine that ran the session.
 
-Rampart exists to reduce that blast radius with deterministic controls at the execution layer, not prompt-only instructions. The goal is straightforward: let developers use coding agents without giving them unconstrained access to the machine they are running on.
+---
 
-## What It Does
+## What It Does Today
 
-Rampart is being built around a simple local loop:
+- **Desktop launcher**: project picker, agent picker, profile picker, preflight diagnostics with capability snapshot
+- **Session console**: live audit stream (file, network, process events), violation panel with structured explanations, "Adjust policy" flow from blocked actions
+- **Profile editor**: filesystem paths, network hosts, allowed commands in product language; no raw engine syntax required
+- **Session history**: full per-session record with audit trail, violations, capability snapshot, and stop reason
+- **Windows enforcement**: Job Object process tree containment, Low Integrity token + project root SACL, WFP per-app-ID outbound network block, ETW audit trail — all runtime-verified
+- **WSL2 isolation mode**: stronger isolation inside a Hyper-V Linux VM when WSL2 is available
+- **Signed profiles**: ed25519 signatures; built-in presets are signed; invalid signatures block launch
+- **Org policy floor**: `OrgPolicy` struct defines a minimum policy applied on top of local profiles; preflight annotates which diagnostics come from org policy
+- **Centralized audit sync**: local outbox drains to a configured HTTPS endpoint on session stop
+- **Headless CLI**: `rampart run` applies full enforcement without the GUI; JSONL events to stdout
 
-1. Choose a project, agent, and profile.
-2. Launch a sandboxed session.
-3. Capture violations and execution events.
-4. Explain what was blocked, allowed, or limited.
-5. Let the user refine policy safely for the next run.
+---
 
-The product is intended to make agent security usable, not just technically possible. That means policy should feel understandable at the product level, event history should be useful without digging through raw logs, and platform limitations should be surfaced clearly instead of hidden behind vague claims.
-
-## Expected User Workflow
-
-The current intended desktop workflow is:
-
-1. Open Rampart.
-2. Choose a local project or repository.
-3. Choose an installed agent, such as Claude Code, Codex, Cursor, Copilot, Aider, Goose, OpenCode, or Gemini CLI.
-4. Accept the suggested profile or open the profile editor to adjust paths, hosts, and commands.
-5. Launch the agent session through Rampart.
-6. Watch live session state, blocked actions, and explanations.
-7. Stop the session and review local history if needed.
-
-The first product experience should feel closer to a safe launcher and session console than to a generic security dashboard.
-
-## How It Works
-
-Rampart is structured as a local desktop product with explicit boundaries:
-
-- A desktop app for launch flow, visibility, session history, and policy UX
-- A local daemon for orchestration, process supervision, persistence, and internal APIs
-- A policy core for schema validation, templates, compilation, and event normalization
-- An engine adapter layer so enforcement is not coupled to a single runtime
-
-The current architecture keeps enforcement outside the UI and outside model prompts. Users interact with projects, profiles, violations, and policies. The daemon and engine layers handle command construction, runtime configuration, capability detection, and structured event conversion.
-
-The current desktop shell talks to the daemon through a Tauri invoke bridge. Launch selections and session history are persisted locally by the daemon so the project, agent, profile, and prior blocked actions survive desktop restarts without adding a cloud dependency.
-
-Rampart should also support terminal-first users over time. The desktop app is the clearest entry point, but the product direction includes a local CLI and headless execution path so developers who normally work in terminals can still run `claude`, `codex`, or similar tools through Rampart-managed profiles and enforcement.
-
-## Execution Model
+## Architecture
 
 ```text
-Choose project + agent + profile
-            |
-            v
-Launch sandboxed session
-            |
-            v
-Capture allows, blocks, and violations
-            |
-            v
-Explain what happened and why
-            |
-            v
-Refine policy for the next run
+ Desktop (Tauri + React)
+        |  Tauri invoke bridge
+        v
+ rampartd (Rust daemon)
+   - session orchestration
+   - profile resolution
+   - persistence
+   - local APIs
+        |
+        +---> policy-core
+        |       - schema validation
+        |       - profile compilation
+        |       - event normalization
+        |
+        +---> engine adapter
+                - WindowsEnforcer (Job Object, Low Integrity, WFP, ETW)
+                - Wsl2Enforcer   (wsl --cd launch, Linux-native enforcement)
+                - GreywallAdapter (reference adapter for macOS/Linux paths)
+                  |
+                  v
+              agent process (claude, codex, aider, ...)
 ```
 
-This is the core product loop Rampart is optimizing for. The goal is not just to block the wrong thing once. The goal is to give developers a repeatable way to run agents safely, understand enforcement outcomes, and improve policy without dropping into raw sandbox internals.
+The desktop shell owns the user workflow. The daemon owns command construction, process launch, policy enforcement, and persistence. Engine adapters are replaceable; adding a new isolation backend requires implementing the engine trait, not touching the daemon or desktop layers.
 
-## Principles
-
-- Local-first by default
-- Default-deny baseline posture
-- Enforcement outside model prompts
-- Replaceable enforcement engine
-- Honest capability reporting across platforms
-- Developer-first UX before team administration
-
-Rampart is not another code review bot, not a generic observability platform, and not a prompt firewall. The product position is a policy and visibility layer around agent execution.
-
-## Current Status
-
-Rampart is early, but the intended product shape is already defined:
-
-- Windows is the primary v1 platform and the main product design constraint
-- The desktop shell is built with Tauri
-- Local orchestration and policy services are implemented in Rust
-- `greywall` remains a reference adapter for macOS and Linux paths, not the permanent product assumption
-- The free local product should remain usable without a required cloud dependency
-
-Capability differences matter and will be surfaced directly in product behavior and docs. Rampart should never imply protections that are not actually enforced on the current OS and engine.
-
-Near-term emphasis is intentionally narrow:
-
-- Make the local enforcement loop trustworthy
-- Make violations understandable in seconds
-- Keep policy authoring above raw engine syntax
-- Avoid premature expansion into team admin or generic governance tooling
-
-Phase 1 and early Phase 2 priorities are now complete:
-
-- Agent-specific launch adapters and startup diagnostics are implemented in rampartd.
-- Launcher flow and session console flow are separate product states in the desktop shell.
-- Capability limits are surfaced before session start, with launch blocked until preflight passes.
-- Terminal-first agent UX is preserved — Rampart controls enforcement and visibility without replacing the agent's native terminal.
-- Session records are self-contained: each history entry carries its capability snapshot, full audit event list, and all violations together.
-- Violation explanations are rule-linked and structured: policy reason, platform limitation, and remediation hint are separate fields.
-- A stable audit event taxonomy is in place across engines and agents: `SessionLifecycle`, `PolicyEnforcement`, and `SystemAlert` categories with domain-specific event kinds.
-- Session history has a dedicated view. Users can inspect any past session's full audit trail and violations without leaving the desktop app.
-- Profile presets are agent-aware. ClaudeCode, Codex, and Aider each have tailored standard and strict presets covering expected filesystem roots, network endpoints, and allowed child processes. The profile picker shows only presets relevant to the selected agent.
-- Profile editing UI is in place. Users can open any selected profile from the launcher and adjust filesystem paths, network hosts, and allowed commands in product language — no raw policy files required.
-- Safe policy refinement flow is in place. Each blocked action in the session console carries an "Adjust policy" button that derives a targeted rule suggestion from the violation type and blocked target, opens the profile editor pre-populated with that suggestion, and lets the user confirm or further adjust before saving.
-
-Phases 1–4 are complete. Phase 5 is in progress.
-
-**Phase 3 — Windows enforcement engine (complete, runtime-validated)**
-
-- **Process containment**: Windows Job Objects with `KILL_ON_JOB_CLOSE` contain the agent and all child processes. The OS terminates the tree when the session ends or Rampart exits. Verified at runtime.
-- **Filesystem write restriction**: agent processes run at Low Integrity (S-1-16-4096). The OS denies writes to all Medium-or-higher integrity paths — user profile, system directories — without custom hooks. The project root is patched to a Low mandatory label so the agent can write to its own working directory. Verified at runtime.
-- **Network enforcement**: per-application-ID WFP outbound blocking is live on both IPv4 and IPv6 ALE connect layers. Filters are installed at session start and auto-removed when the session ends. Verified at runtime.
-- **Audit trail**: a Rampart ETW provider emits every session lifecycle and audit event, capturable with standard Windows tracing tools. Verified at runtime.
-- **WSL2 isolation mode**: users with WSL2 installed can launch agents inside a Linux VM for Linux-native enforcement. Surfaced as a stronger isolation option at preflight when WSL2 is detected.
-- **Honest threat model**: enforcement targets accidental overreach by well-behaved agents, not adversarial processes issuing direct syscalls. This is the real AI coding-agent threat.
-
-**The MVP enforcement loop is complete and runtime-verified.** A user can pick an agent, project, and profile; launch through Rampart; and have real OS-level enforcement applied to the session.
-
-The WFP violation streaming pipeline is now wired and the filter installs correctly under admin. End-to-end validation against a real agent initiating outbound traffic is still pending: the test instrumentation used a `.cmd` shim while `resolve_app_path` resolves agent commands via SearchPathW with a hardcoded `.exe` extension, causing the filter and spawned process image to diverge. Blocks fire correctly at the OS level; pipeline is verified; end-to-end event delivery to the session console is not yet exercised in normal use.
-
-**Phase 4 — Team and distribution features (complete)**
-
-- **Signed profile distribution** (complete): profiles carry an optional ed25519 signature block. Rampart verifies the signature on every load, surfaces the status in the profile picker, and hard-blocks launch if the signature is Invalid. Profiles can be fetched from HTTPS URLs and are cached to disk so sessions are not blocked by transient network failures.
-- **Centralized audit sync** (complete): a local audit outbox accumulates session events when a sync endpoint is configured. The desktop launcher exposes a sync settings panel to enter an endpoint URL and bearer token. Events are sent in batches of up to 500, with an optional path-redaction mode. A background worker drains the outbox on every session stop.
-- **Org settings** (complete): `OrgPolicy` + `OrgPolicyScope` structs define a policy floor keyed to agent type and project path globs. `resolve_effective_policy` merges the org floor with the local profile, taking the most restrictive value per dimension. Preflight annotates diagnostics with `from_org_policy` when the org floor is active; the launcher shows an "Org policy floor active" badge with per-diagnostic `[from org policy]` tags.
-
-**Phase 5 — Headless, CI, and broader engine support (in progress)**
-
-- **Headless `rampart run` CLI** (complete): `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr, streams audit and violation events as JSONL to stdout, and exits cleanly on Ctrl+C or agent exit. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id> --project <path>` lists available profiles.
-- **WFP violation streaming** (in progress): blocked connections detected by `WfpNetworkGuard` now surface in the session console via `FwpmNetEventSubscribe0`. Whether this subscription succeeds at Medium integrity (non-elevated) is pending runtime validation.
-
-**What remains to reach a shippable beta**
-
-| Item | Phase | Status |
-|------|-------|--------|
-| Headless `rampart run` CLI | 5 | **Complete** — `apps/cli/` binary; preflight → stderr, JSONL events → stdout, Ctrl+C clean shutdown |
-| Violation event streaming in Windows Native mode | 5 | Pipeline wired and verified; end-to-end block-triggers-event not yet exercised against an agent that initiates outbound traffic in normal use |
-| WFP event monitor privilege | 5 | Confirmed: subscribes successfully under admin. The filter installation bug (null `displayData.name`) that previously prevented this from being testable was fixed during the Phase 3 validation run. |
-| AppContainer isolation mode | 5 | Deferred — seam preserved in engine adapter layer |
-| Per-agent capability matrices | 5 | **Complete** — Cursor, Copilot, Goose, OpenCode, GeminiCli standard+strict presets in `policy-core`; 12 unit tests |
-| Installer / packaging | — | Not started |
-
-## Getting Started
-
-Rampart currently has a real workspace skeleton for the documented modules.
-
-### Prerequisites
-
-- Node.js 20 or later
-- pnpm 9.x
-- Rust via `rustup` with the `x86_64-pc-windows-msvc` target installed
-- Visual Studio 2022 Build Tools with the "Desktop development with C++" workload
-
-If the MSVC linker is not present, `cargo build` will fail with `LNK1104`. To fix, install the workload above via the Visual Studio Installer and confirm `link.exe` is on the PATH (typically through a Developer Command Prompt or by running `rustup target add x86_64-pc-windows-msvc`).
-
-### Install dependencies
-
-```bash
-pnpm install
-```
-
-### Run the desktop app
-
-```bash
-pnpm dev:desktop
-```
-
-### Build the desktop app
-
-```bash
-pnpm build:desktop
-```
-
-### Build the shared UI package
-
-```bash
-pnpm build:shared-ui
-```
-
-The desktop wrapper script adds the default `rustup` cargo path if the shell did not inherit it. Native Tauri builds still require a working MSVC link environment.
+---
 
 ## Repository Layout
 
 ```text
 rampart/
 |- apps/
-|  |- desktop/
-|  |  `- src-tauri/
-|  `- cli/           ← headless rampart binary
+|  |- desktop/         Tauri + React desktop app
+|  |  `- src-tauri/    Tauri backend and Tauri commands
+|  `- cli/             Headless rampart binary
 |- crates/
-|  |- rampartd/
-|  |- policy-core/
-|  |- engine-greywall/
-|  `- engine-windows/
+|  |- rampartd/        Daemon: session orchestration, persistence, local APIs
+|  |- policy-core/     Policy schema, validation, presets, event taxonomy
+|  |- engine-greywall/ Reference adapter (macOS/Linux compatibility)
+|  `- engine-windows/  Windows enforcement (Job Object, WFP, ETW, WSL2)
 |- packages/
-|  `- shared-ui/
+|  `- shared-ui/       Reusable React components (HistoryList, ProfileEditorPanel, ...)
 `- docs/
 ```
 
+---
+
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Threat model](docs/threat-model.md)
-- [Roadmap](docs/roadmap.md)
-- [Business model](docs/business-model.md)
-- [Workspace ADR](docs/adr/0001-workspace-layout.md)
-- [Public documentation policy](docs/public-docs-policy.md)
+| Document | Description |
+|----------|-------------|
+| [GETTING_STARTED.md](GETTING_STARTED.md) | Prerequisites, installation, walkthrough, CLI, troubleshooting |
+| [docs/architecture.md](docs/architecture.md) | Module boundaries, IPC layer, engine adapter contract |
+| [docs/threat-model.md](docs/threat-model.md) | What Rampart contains, what it does not, known gaps |
+| [docs/roadmap.md](docs/roadmap.md) | Phase status and what is coming next |
+| [docs/business-model.md](docs/business-model.md) | Free local product and paid team layer |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, tests, CLI build, issue tracker |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
 
-The public docs capture product-level architecture decisions and intended workflow, not the internal research inputs that informed them.
-
-## Public Documentation Policy
-
-The public repo intentionally keeps a small docs set in git so contributors can understand Rampart's architecture and security model without exposing private working notes.
-
-- Public docs live under `docs/` and cover product-level architecture, threat model, roadmap, and business context.
-- Internal planning material such as `docs/PRD.md` is not part of the public documentation set unless explicitly sanitized for publication.
-- Private operator notes, prompt files, task notes, and personal instructions are not committed to the public repo.
-- Secrets, keys, passwords, tokens, and local-only artifacts must never be tracked.
-
-## Open Source
-
-Rampart is open source under the Apache 2.0 license. The local product is the adoption layer. The likely paid layer is hosted team functionality such as aggregated audit visibility, policy coordination, alerts, and enterprise-ready controls, rather than charging for the local sandbox itself.
+---
 
 ## License
 

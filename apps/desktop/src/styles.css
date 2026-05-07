@@ -69,6 +69,11 @@ body {
   color: #495b73;
 }
 
+.error-text {
+  color: #b3261e;
+  margin-top: 6px;
+}
+
 .list-grid {
   display: grid;
   gap: 10px;

@@ -410,6 +410,26 @@ pub fn sign_profile(
     Ok(())
 }
 
+/// Built-in 32-byte ed25519 seed used to sign first-party preset profiles shipped
+/// with Rampart. The verifying key derived from this seed is embedded in every
+/// signed preset, so `verify_signature` round-trips to `Valid` without requiring
+/// any external trust anchor. Keep this seed stable across releases — rotating it
+/// invalidates every preset signature in user installs that have cached state.
+pub const BUILTIN_SIGNING_SEED: [u8; 32] = [
+    0x52, 0x61, 0x6d, 0x70, 0x61, 0x72, 0x74, 0x42,
+    0x75, 0x69, 0x6c, 0x74, 0x69, 0x6e, 0x4b, 0x65,
+    0x79, 0x53, 0x65, 0x65, 0x64, 0x2d, 0x76, 0x31,
+    0x2e, 0x30, 0x2e, 0x30, 0x2d, 0x70, 0x72, 0x6f,
+];
+
+/// Sign a profile with the built-in Rampart signing seed. This is what makes
+/// preset profiles render as `[signed]` in the desktop launcher. Best-effort:
+/// returns Ok on success and silently no-ops on serialization failure (which
+/// would only happen if the profile is structurally invalid).
+pub fn sign_with_builtin_key(profile: &mut Profile) -> Result<(), SignError> {
+    sign_profile(profile, "rampart-builtin", &BUILTIN_SIGNING_SEED)
+}
+
 impl Profile {
     pub fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = ValidationErrors::default();

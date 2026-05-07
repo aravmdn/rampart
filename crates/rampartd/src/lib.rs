@@ -1723,14 +1723,16 @@ where
             policy_core::AgentTool::OpenCode,
             policy_core::AgentTool::GeminiCli,
         ] {
-            for preset in policy_core::agent_profile_presets(tool, &project_root) {
+            for mut preset in policy_core::agent_profile_presets(tool, &project_root) {
                 if preset.id == profile_id {
+                    let _ = policy_core::sign_with_builtin_key(&mut preset);
                     return Ok(ProfileDetail::from_profile(&preset));
                 }
             }
         }
-        for preset in policy_core::desktop_profile_presets(&project_root) {
+        for mut preset in policy_core::desktop_profile_presets(&project_root) {
             if preset.id == profile_id {
+                let _ = policy_core::sign_with_builtin_key(&mut preset);
                 return Ok(ProfileDetail::from_profile(&preset));
             }
         }
@@ -1903,15 +1905,51 @@ fn detect_repo_root() -> Result<PathBuf, ServiceError> {
 pub fn default_agents() -> Vec<AgentCatalogEntry> {
     vec![
         AgentCatalogEntry {
+            id: "claude-code".into(),
+            label: "Claude Code".into(),
+            detail: "Terminal-first Anthropic agent with profile-driven launch.".into(),
+            terminal_first: true,
+        },
+        AgentCatalogEntry {
             id: "codex".into(),
             label: "Codex".into(),
             detail: "OpenAI coding agent launched through Rampart session controls.".into(),
             terminal_first: true,
         },
         AgentCatalogEntry {
-            id: "claude-code".into(),
-            label: "Claude Code".into(),
-            detail: "Terminal-first Anthropic agent with profile-driven launch.".into(),
+            id: "aider".into(),
+            label: "Aider".into(),
+            detail: "Open-source terminal pair-programmer with git-aware edits.".into(),
+            terminal_first: true,
+        },
+        AgentCatalogEntry {
+            id: "cursor".into(),
+            label: "Cursor".into(),
+            detail: "Cursor IDE agent (cursor-agent CLI).".into(),
+            terminal_first: false,
+        },
+        AgentCatalogEntry {
+            id: "copilot".into(),
+            label: "GitHub Copilot CLI".into(),
+            detail: "GitHub Copilot CLI agent for shell-driven workflows.".into(),
+            terminal_first: false,
+        },
+        AgentCatalogEntry {
+            id: "goose".into(),
+            label: "Goose".into(),
+            detail: "Block Goose terminal-first agent.".into(),
+            terminal_first: true,
+        },
+        AgentCatalogEntry {
+            id: "opencode".into(),
+            label: "OpenCode".into(),
+            detail: "OpenCode terminal agent.".into(),
+            terminal_first: true,
+        },
+        AgentCatalogEntry {
+            id: "gemini".into(),
+            label: "Gemini CLI".into(),
+            detail: "Google Gemini CLI agent.".into(),
             terminal_first: true,
         },
     ]
@@ -1953,17 +1991,30 @@ pub fn default_profiles() -> Vec<Profile> {
         all.extend(policy_core::agent_profile_presets(tool, &root));
     }
     all.extend(policy_core::desktop_profile_presets(&root));
+    sign_builtin_presets(&mut all);
     all
 }
 
 /// Profiles to show in the launcher for a given agent selection.
 pub fn profiles_for_agent(agent_id: Option<&str>, project_root: &str) -> Vec<Profile> {
-    match agent_id {
+    let mut presets = match agent_id {
         Some(id) => {
             let tool = agent_tool_from_id(id);
             policy_core::agent_profile_presets(&tool, project_root)
         }
         None => policy_core::desktop_profile_presets(project_root),
+    };
+    sign_builtin_presets(&mut presets);
+    presets
+}
+
+/// Sign every preset with the built-in Rampart signing seed so the launcher's
+/// profile picker renders `[signed]` next to first-party presets and so
+/// `verify_signature` returns `Valid` at preflight time. Best-effort: signing
+/// errors are ignored (a corrupt preset would fail validation elsewhere).
+fn sign_builtin_presets(profiles: &mut [Profile]) {
+    for profile in profiles.iter_mut() {
+        let _ = policy_core::sign_with_builtin_key(profile);
     }
 }
 

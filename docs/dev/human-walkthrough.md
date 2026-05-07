@@ -74,8 +74,9 @@ Check DevTools console for the IPC error.
 ## Step 3 — Agent picker: cycle through agents
 
 **Action:** In the "Agent picker" section, click through each available agent option.
-There should be 8: ClaudeCode, Codex, Aider, Cursor, Windsurf, Copilot, Gemini, Amp
-(labels may differ slightly — these are the `agent.label` values from the presets).
+There should be 8: Claude Code, Codex, Aider, Cursor, GitHub Copilot CLI, Goose,
+OpenCode, Gemini CLI (labels may differ slightly — these are the `agent.label`
+values from the presets).
 
 **Look for:**
 - Each click selects that agent (highlighted).

@@ -117,6 +117,8 @@ describe("desktop shell", () => {
           ],
         },
       ]),
+      addProject: vi.fn().mockResolvedValue(undefined),
+      removeProject: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App daemonClient={client} />);
@@ -207,6 +209,8 @@ describe("desktop shell", () => {
           ],
         },
       ]),
+      addProject: vi.fn().mockResolvedValue(undefined),
+      removeProject: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App daemonClient={client} />);
@@ -284,6 +288,8 @@ describe("desktop shell", () => {
       fetchOrgPolicy: vi.fn().mockResolvedValue(null),
       currentOrgPolicy: vi.fn().mockResolvedValue(null),
       listSessionHistory: vi.fn().mockResolvedValue([]),
+      addProject: vi.fn().mockResolvedValue(undefined),
+      removeProject: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App daemonClient={client} />);
@@ -343,6 +349,8 @@ describe("desktop shell", () => {
       fetchOrgPolicy: vi.fn().mockResolvedValue(null),
       currentOrgPolicy: vi.fn().mockResolvedValue(null),
       listSessionHistory: vi.fn().mockResolvedValue([]),
+      addProject: vi.fn().mockResolvedValue(undefined),
+      removeProject: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App daemonClient={client} />);
@@ -410,6 +418,8 @@ describe("desktop shell", () => {
       fetchOrgPolicy: vi.fn().mockResolvedValue(null),
       currentOrgPolicy: vi.fn().mockResolvedValue(null),
       listSessionHistory: vi.fn().mockResolvedValue([]),
+      addProject: vi.fn().mockResolvedValue(undefined),
+      removeProject: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App daemonClient={client} />);

@@ -132,13 +132,19 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [orgPolicy, setOrgPolicy] = useState<import("./daemon/contracts").OrgPolicy | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [addProjectPath, setAddProjectPath] = useState("");
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
+  const [orgPolicyError, setOrgPolicyError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     void (async () => {
       const launchContext = await daemonClient.loadLaunchContext();
       const recentHistory = await daemonClient.listSessionHistory();
       const currentOrg = await daemonClient.currentOrgPolicy();
+      const initialSync = await daemonClient.getSyncStatus().catch(() => null);
       setOrgPolicy(currentOrg);
+      setSyncStatus(initialSync);
       setProjects(launchContext.projects);
       setAgents(launchContext.agents);
       setProfiles(launchContext.profiles);
@@ -151,8 +157,21 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       );
       setAgentId(launchContext.selected.agentId ?? launchContext.agents[0]?.id ?? null);
       setProfileId(launchContext.selected.profileId ?? launchContext.profiles[0]?.id ?? null);
+      setLoaded(true);
     })();
   }, [daemonClient]);
+
+  // Re-fetch profile list whenever the agent selection changes so the picker
+  // reflects per-agent presets (claude-code.standard vs codex.standard, etc).
+  useEffect(() => {
+    if (!loaded || !agentId) return;
+    void daemonClient.loadLaunchContext().then((ctx) => {
+      setProfiles(ctx.profiles);
+      setProfileId((prev) =>
+        prev && ctx.profiles.some((p) => p.id === prev) ? prev : ctx.profiles[0]?.id ?? null,
+      );
+    });
+  }, [agentId, daemonClient, loaded]);
 
   useEffect(() => {
     const selectedProject = projects.find((project) => project.id === projectId);
@@ -166,9 +185,12 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     });
   }, [agentId, daemonClient, profileId, projectId, projects]);
 
-  // Poll session events while a session is running
+  // Poll session events while a session is live (launching or active). Keep polling
+  // through the launching window so the very first events surface as soon as the
+  // session goes active, without a 3-second blank gap.
   useEffect(() => {
-    if (!session.id || session.status !== "active") return;
+    if (!session.id) return;
+    if (session.status === "stopped" || session.status === "failed" || session.status === "idle") return;
     const interval = setInterval(() => {
       void daemonClient.streamSessionEvents(session.id!).then((sessionEvents) => {
         setEvents(
@@ -353,6 +375,15 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       const sessionEvents = await daemonClient.streamSessionEvents(launched.id ?? "");
       const recentHistory = await daemonClient.listSessionHistory();
 
+      // The daemon may return status="failed" with an error captured as an audit
+      // event rather than throwing. Surface it so the user sees the reason.
+      if (launched.status === "failed") {
+        const lastMsg = sessionEvents.audit.length > 0
+          ? sessionEvents.audit[sessionEvents.audit.length - 1].message
+          : "Session launch failed (no detail). Check that the agent is installed on PATH and that you ran Rampart as Administrator.";
+        setLaunchError(lastMsg);
+      }
+
       setSession({
         id: launched.id,
         status: launched.status,
@@ -415,40 +446,71 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
 
   async function handleAddProject() {
     const path = addProjectPath.trim();
-    if (!path) return;
-    await daemonClient.addProject(path);
-    setAddProjectPath("");
-    const launchContext = await daemonClient.loadLaunchContext();
-    setProjects(launchContext.projects);
+    setAddProjectError(null);
+    if (!path) {
+      setAddProjectError("Enter a project directory path before adding.");
+      return;
+    }
+    try {
+      await daemonClient.addProject(path);
+      setAddProjectPath("");
+      const launchContext = await daemonClient.loadLaunchContext();
+      setProjects(launchContext.projects);
+      const justAdded = launchContext.projects.find((p) => p.path === path);
+      if (justAdded) setProjectId(justAdded.id);
+    } catch (err) {
+      setAddProjectError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleRemoveProject(path: string) {
+    const wasSelected = projects.find((p) => p.id === projectId)?.path === path;
     await daemonClient.removeProject(path);
     const launchContext = await daemonClient.loadLaunchContext();
     setProjects(launchContext.projects);
-    if (projects.find((p) => p.id === projectId)?.path === path) {
+    if (wasSelected) {
       setProjectId(launchContext.projects[0]?.id ?? null);
     }
   }
 
   async function handleOrgPolicySave() {
-    await daemonClient.configureOrgPolicyUrl(orgPolicyUrl.trim() || null);
+    setOrgPolicyError(null);
+    try {
+      await daemonClient.configureOrgPolicyUrl(orgPolicyUrl.trim() || null);
+    } catch (err) {
+      setOrgPolicyError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleOrgPolicyFetch() {
-    const policy = await daemonClient.fetchOrgPolicy();
-    setOrgPolicy(policy);
+    setOrgPolicyError(null);
+    try {
+      const policy = await daemonClient.fetchOrgPolicy();
+      setOrgPolicy(policy);
+    } catch (err) {
+      setOrgPolicyError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleSyncSave() {
-    await daemonClient.configureSync({ endpointUrl: syncEndpoint, token: syncToken, stripPaths: syncStripPaths });
-    const status = await daemonClient.getSyncStatus();
-    setSyncStatus(status);
+    setSyncError(null);
+    try {
+      await daemonClient.configureSync({ endpointUrl: syncEndpoint, token: syncToken, stripPaths: syncStripPaths });
+      const status = await daemonClient.getSyncStatus();
+      setSyncStatus(status);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleSyncNow() {
-    const status = await daemonClient.syncAuditEvents();
-    setSyncStatus(status);
+    setSyncError(null);
+    try {
+      const status = await daemonClient.syncAuditEvents();
+      setSyncStatus(status);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   // ── Profile editor view ────────────────────────────────────────────
@@ -523,6 +585,17 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
 
   // ── Launcher view ──────────────────────────────────────────────────
   if (view === "launcher") {
+    if (!loaded) {
+      return (
+        <main className="shell">
+          <section className="panel hero">
+            <p className="eyebrow">Rampart desktop shell</p>
+            <h1>Launch console</h1>
+            <p className="muted">Loading projects, agents, and profiles…</p>
+          </section>
+        </main>
+      );
+    }
     return (
       <main className="shell">
         <section className="panel hero">
@@ -560,6 +633,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                   Add
                 </button>
               </div>
+              {addProjectError ? <p className="muted error-text">{addProjectError}</p> : null}
               {projects.filter((p) => p.source === "user-added").length > 0 ? (
                 <ul className="plain-list">
                   {projects.filter((p) => p.source === "user-added").map((p) => (
@@ -658,20 +732,24 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                     <StatusBadge tone="warn">Org policy floor active</StatusBadge>
                   ) : null}
                 </div>
-                <ul className="plain-list">
-                  {preflight.diagnostics.map((diagnostic, index) => (
-                    <li key={index}>
-                      <strong>
-                        {diagnostic.severity === "pass" ? "\u2713" : diagnostic.severity === "fail" ? "\u2717" : "\u26A0"}{" "}
-                        {diagnostic.label}
-                        {diagnostic.fromOrgPolicy ? (
-                          <span> <span className="org-policy-tag">[from org policy]</span></span>
-                        ) : null}
-                      </strong>
-                      <div className="muted">{diagnostic.detail}</div>
-                    </li>
-                  ))}
-                </ul>
+                {preflight.diagnostics.length === 0 ? (
+                  <p className="muted">No diagnostics for this configuration.</p>
+                ) : (
+                  <ul className="plain-list">
+                    {preflight.diagnostics.map((diagnostic, index) => (
+                      <li key={index}>
+                        <strong>
+                          {diagnostic.severity === "pass" ? "\u2713" : diagnostic.severity === "fail" ? "\u2717" : "\u26A0"}{" "}
+                          {diagnostic.label}
+                          {diagnostic.fromOrgPolicy ? (
+                            <span> <span className="org-policy-tag">[from org policy]</span></span>
+                          ) : null}
+                        </strong>
+                        <div className="muted">{diagnostic.detail}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
             ) : null}
 
@@ -723,6 +801,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                   {syncStatus.lastError ? ` · Error: ${syncStatus.lastError}` : ""}
                 </div>
               ) : null}
+              {syncError ? <p className="muted error-text">{syncError}</p> : null}
             </section>
 
             <section className="panel">
@@ -756,6 +835,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
               ) : (
                 <div className="muted">No org policy active.</div>
               )}
+              {orgPolicyError ? <p className="muted error-text">{orgPolicyError}</p> : null}
             </section>
 
             <section className="panel">

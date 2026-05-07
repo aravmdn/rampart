@@ -13,9 +13,13 @@ Rampart is a local-first desktop product for controlling AI coding agents with e
 
 - `rampartd` depends on an engine trait, not a hard-coded sandbox implementation.
 - Engine adapters own binary discovery, capability reporting, and event normalization.
-- Current `greywall` adapter is reference integration for non-Windows paths and compatibility testing.
+- Three adapters exist:
+  - `WindowsEnforcer` (`engine-windows`): Job Object containment, Low Integrity token + project root SACL, WFP per-app-ID network filters, ETW audit trail. Primary runtime on Windows.
+  - `Wsl2Enforcer` (`engine-windows`): wraps the command as `wsl --cd <linux_path> -- <command>` and skips Win32 enforcement hooks. Used when `IsolationMode::Wsl2` is selected.
+  - `GreywallAdapter` (`engine-greywall`): reference integration for macOS and Linux paths; used in compatibility testing.
 - Windows-first delivery means public docs and capability snapshots must not imply `greywall` is Rampart's Windows runtime.
 - The desktop talks to the daemon through a Tauri invoke bridge. Command construction, project detection, profile resolution, local persistence, and history queries stay on the Rust side of that boundary.
+- Current Tauri commands include: `load_launch_context`, `preflight_check`, `launch_session`, `stop_session`, `stream_session_events`, `load_history`, `preflight_check`, `loadProfile`, `saveProfile`, `configure_sync`, `get_sync_status`, `sync_audit_events`, `configure_org_policy_url`, `fetch_org_policy`, `current_org_policy`, `sign_profile`.
 
 ## Agent adapter boundary
 
@@ -119,7 +123,7 @@ The following early Phase 2 priorities are also complete:
 
 **Org settings** — complete. `OrgPolicy` + `OrgPolicyScope` in policy-core. `resolve_effective_policy(local, org)` takes the most restrictive value per dimension; empty org lists are treated as "no opinion" to avoid locking down dimensions the org didn't specify. `org_policy_applies` matches agent type glob and project path prefix. `configure_org_policy_url` / `fetch_org_policy` / `current_org_policy` Tauri commands. Preflight annotates diagnostics with `from_org_policy` when the floor is active; the launcher shows an "Org policy floor active" badge.
 
-## Phase 5 implementation status (in progress)
+## Phase 5 implementation status (complete except where noted)
 
 **Headless CLI** — complete. `apps/cli/` provides a `rampart` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` runs preflight to stderr and streams audit + violation events as JSONL to stdout. All Windows enforcement primitives apply through the same `RampartService` as the desktop. `rampart list-profiles --agent <id> --project <path>` lists agent-specific presets.
 

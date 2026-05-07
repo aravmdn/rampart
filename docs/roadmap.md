@@ -1,106 +1,73 @@
 # Roadmap
 
-Rampart should ship in phases that protect the local enforcement loop first.
+Rampart ships in phases that lock down the local enforcement loop first before expanding to team and CI features.
 
-## Phase 1
+---
 
-- Desktop shell
-- Project picker
-- Agent picker
-- Profile picker
-- Launch and live session visibility
+## Phase 1 — Desktop shell and launch flow (complete)
 
-Reference-driven priorities inside this phase:
+- Desktop shell: project picker, agent picker, profile picker, live session visibility
+- Agent-specific launch adapters instead of treating every agent as a bare executable
+- Launch preflight diagnostics: explains startup failures before a session begins
+- Launcher and session console as separate product states
+- Capability warnings before launch; launch disabled until preflight passes
+- Terminal-first handoff preserved: Rampart controls enforcement while the agent keeps its native terminal
 
-- Add agent-specific launch adapters instead of treating every agent as a bare executable.
-- Add launch preflight diagnostics so Rampart can explain startup failures before a session begins.
-- Split launcher flow from active session console flow so the product opens into the right state quickly.
-- Surface capability warnings and unsupported Windows coverage before launch, not after a block.
-- Preserve terminal-first handoff instead of pulling early interaction into a replacement Rampart chat UI.
+## Phase 2 — Profile editing, history, and policy refinement (complete)
 
-## Phase 2
+- Full session records: launch context, capability snapshot, audit trail, and violations persisted together
+- Rule-linked violation explanations in product language, including platform limitation notes
+- Agent-aware profile presets: standard and strict profiles for ClaudeCode, Codex, and Aider
+- Stable audit event taxonomy: `AuditEventCategory` and `AuditEventKind` variants across engines and agents
+- Profile editor: filesystem paths, network hosts, allowed commands; no raw engine syntax
+- Safe policy refinement: "Adjust policy" on a violation opens the editor pre-populated with a targeted rule suggestion
+- History view: per-session audit trail and violation inspection in the desktop app
 
-- Profile editing
-- Reusable presets
-- Local history
-- Violation explanations
-- Safe policy refinement
+## Phase 3 — Windows enforcement engine (complete, runtime-validated)
 
-Reference-driven priorities inside this phase:
+MVP gate closed. All enforcement mechanisms verified on Windows 11 under admin (2026-04-28, re-confirmed 2026-05-06).
 
-- Persist full session records: launch context, capability snapshot, audit trail, and violations together.
-- Add rule-linked violation explanations in product language, including platform limitation notes.
-- Add agent-aware profile presets and preflight checks keyed to supported terminal agents.
-- Define a stable event taxonomy for launch, allow, block, alert, stop, and policy-change records.
-- Treat resume and history as first-class local data, not transient UI state.
-
-## Phase 3 — Windows enforcement engine (complete)
-
-MVP gate closed. Enforcement code is shipped and runtime-validated on Windows under admin.
-
-- ✓ Process containment: Job Objects with `KILL_ON_JOB_CLOSE` contain the agent process tree — runtime verified. Note: the initial implementation used `BasicLimitInformation` (class 2); a bug requiring `ExtendedLimitInformation` (class 9) on Windows 11 was surfaced and fixed during this validation run.
-- ✓ Network enforcement: WFP per-app-ID outbound BLOCK filters on IPv4 + IPv6, auto-cleanup on session end — runtime verified. Note: a bug where `FwpmFilterAdd0` returned `FWP_E_NULL_DISPLAY_NAME` due to a null `filter.displayData.name` was surfaced and fixed during this validation run.
-- ✓ Filesystem write scoping: Low Integrity token + project root SACL patch — runtime verified
-- ✓ Audit trail: ETW provider emitting all session and audit events — runtime verified
-- ✓ WSL2 isolation mode: stronger enforcement via Linux VM for users with WSL2 installed
-- ✓ Runtime end-to-end validation: all five enforcement mechanisms pass under admin on Windows 11
-
-Reference-driven priorities inside this phase:
-
-- Use OS-native enforcement primitives. Do not use fragile in-process hooking approaches.
-- Scope enforcement to the agent process, not machine-wide rules.
-- Surface enforcement capability gaps honestly in preflight.
-- Wire enforcement events into the existing audit taxonomy without inventing a separate format.
-- Leave a clean seam for stronger isolation modes in later phases.
+- **Process containment**: `WindowsJob` creates a Job Object with `KILL_ON_JOB_CLOSE`. The OS kills the entire agent process tree on session end or Rampart exit. Breakaway disallowed by default.
+  - Fix applied during validation: `KILL_ON_JOB_CLOSE` requires `ExtendedLimitInformation` (class 9), not `BasicLimitInformation` (class 2), on Windows 11.
+- **Filesystem write scoping**: `set_process_low_integrity()` sets the agent token to Low Integrity (S-1-16-4096). `patch_project_low_integrity_label()` sets a Low SACL on the project root so the agent can write to its working directory.
+- **Network enforcement**: `WfpNetworkGuard` installs per-app-ID outbound BLOCK filters on IPv4 + IPv6 ALE connect layers via a dynamic WFP session. Filters auto-remove on session end. No kernel driver required.
+  - Fix applied during validation: `FwpmFilterAdd0` returned `FWP_E_NULL_DISPLAY_NAME` due to a null `filter.displayData.name`; fixed.
+- **ETW audit trail**: `EtwAuditProvider` emits all session lifecycle and audit events. Capturable with standard Windows tracing tools.
+- **WSL2 isolation mode**: `detect_wsl2()` at preflight; `Wsl2Enforcer`; agent wrapped as `wsl --cd <linux_path> -- <command>`; Win32 enforcement hooks skipped inside the VM.
 
 ## Phase 4 — Team and distribution features (complete)
 
-- ✓ **Signed profile distribution** (4.1)
-  - ed25519 signatures on profiles; `sign_profile` command callable from the desktop
-  - `verify_signature` on every profile load; `SignatureStatus` surfaced in profile picker
-  - `fetch_remote_profile`: HTTPS GET with disk cache fallback at `<store>/.rampart/profile-cache/`
-  - Preflight hard-blocks launch when signature status is Invalid
+- **Signed profile distribution**: ed25519 signatures on profiles; `SignatureStatus` surfaced in profile picker; HTTPS fetch with disk cache fallback; preflight hard-blocks on Invalid signature
+- **Centralized audit sync**: local `AuditQueueEntry` outbox; `sync_audit_events` drains up to 500 entries per call, POSTs with Bearer auth; optional `strip_paths` redaction; background worker drains on every `stop_session`
+- **Org settings**: `OrgPolicy` + `OrgPolicyScope`; `resolve_effective_policy` strict merge; `from_org_policy` annotation on preflight diagnostics; "Org policy floor active" badge in launcher
 
-- ✓ **Centralized audit sync with background worker** (4.2)
-  - Local audit outbox in persisted state; events queued when sync is configured
-  - `sync_audit_events`: drains up to 500 unsent entries per call, POSTs to configured endpoint with Bearer auth
-  - `strip_paths` option redacts file path values before sending
-  - `configure_sync` / `get_sync_status` Tauri commands; sync settings panel in desktop launcher
-  - Background worker: `drain_audit_queue` free function; `trigger_background_sync` spawns thread on every `stop_session`
+## Phase 5 — Headless, CI, and broader engine support (complete except where noted)
 
-- ✓ **Org settings** (4.3)
-  - `OrgPolicy` + `OrgPolicyScope` structs in policy-core (policy floor + scope: agent type glob + project path glob)
-  - `resolve_effective_policy(local, org)` strict merge — most restrictive value wins per dimension
-  - `org_policy_applies` scope matching for agent type and project path prefix
-  - `preflight_check` annotates diagnostics with `from_org_policy` when org floor is active
-  - UI: "Org policy floor active" badge in launcher preflight panel; `[from org policy]` inline tags on affected diagnostics
+- **Headless CLI** (complete): `apps/cli/` binary. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` — preflight to stderr, JSONL events to stdout, clean Ctrl+C shutdown. All Windows enforcement primitives applied through `RampartService`.
+- **Per-agent capability matrices** (complete): standard + strict profiles for Cursor, Copilot, Goose, OpenCode, and GeminiCli added to `agent_profile_presets()`; 12 unit tests
+- **WFP violation streaming** (pipeline complete; end-to-end pending): `WfpEventMonitor` subscribes via `FwpmNetEventSubscribe0`; filter installs and subscribes correctly under admin. End-to-end validation against a real agent initiating outbound traffic is not yet confirmed — the test instrumentation used a `.cmd` shim while `resolve_app_path` hardcodes `.exe`, causing filter and process image to diverge. Blocks fire at OS level; console surfacing of those blocks is not yet exercised in normal use.
+- **AppContainer isolation mode** (deferred): the engine adapter architecture preserves a clean seam. AppContainer provides a separate security principal per session and is the most principled long-term isolation primitive. Deferred to a future phase.
 
-Reference-driven priorities inside this phase:
+---
 
-- Keep team controls above the local enforcement loop instead of moving core policy decisions into a hosted plane.
-- Reuse the local event model and profile schema for sync features instead of inventing separate admin-only formats.
-- Treat remote or bridge workflows as access patterns layered on top of local execution, not as a separate product core.
+## What's Next
 
-## Phase 5 — Headless, CI, and broader engine support (in progress)
+### Installer and packaging
 
-- ✓ **Headless `rampart run` CLI**: `apps/cli/` binary reuses `RampartService` for full enforcement. `rampart run --agent <id> --profile <id> --project <path> [--wsl2]` — preflight to stderr, JSONL events to stdout, clean Ctrl+C shutdown. `rampart list-profiles` enumerates agent-specific presets.
-- **WFP violation streaming** (pipeline complete; end-to-end pending): `FwpmNetEventSubscribe0` subscription and `WfpEventMonitor` wiring are in place. The filter installs and subscribes correctly under admin. End-to-end validation against a real agent initiating outbound traffic is not yet confirmed — test instrumentation used a `.cmd` shim while `resolve_app_path` hardcodes `.exe`, causing filter and process image to diverge. Pipeline verified; block-triggers-event not yet exercised in normal use.
-- ✓ **Per-agent capability matrices**: `agent_profile_presets()` in policy-core now returns tailored standard+strict profiles for Cursor, Copilot, Goose, OpenCode, and GeminiCli in addition to ClaudeCode/Codex/Aider. Each standard profile allows the agent's known API endpoints; strict profiles deny network entirely. 12 Rust unit tests added.
-- AppContainer isolation mode for stronger process-level sandboxing
-- Enterprise controls where justified
+No installer exists yet. Users must build from source. The next distribution step is a signed MSIX or NSIS installer that:
 
-Reference-driven priorities inside this phase:
+- bundles the Tauri desktop app and the `rampart` CLI binary
+- handles the Administrator privilege requirement at install time
+- provides a Start Menu entry and optional PATH registration for the CLI
 
-- Add headless before enterprise. A CLI path that reuses the daemon's enforcement stack is more valuable earlier than SSO or governance dashboards.
-- Add per-agent capability matrices so broader agent support does not weaken the enforcement contract.
-- Consider plugin and extension points only after Windows enforcement, explanation, and distribution loops are trustworthy.
-- Violation event streaming is the most important UX gap before handing Rampart to external beta users in Windows Native mode.
+### AppContainer isolation mode
 
-## What Changed From Research Review
+Windows AppContainer is the highest-fidelity isolation primitive available without a hypervisor. It assigns each session a unique security principal, enabling per-app filesystem and network ACLs at the OS layer with no cleanup burden on session end. The engine adapter seam is ready; implementation is the next enforcement investment after packaging.
 
-External implementation review does not change Rampart's product position, but it does make several next steps more concrete.
+### End-to-end WFP violation streaming
 
-- Real terminal agents need explicit startup orchestration, so Rampart should invest early in agent adapters and preflight checks.
-- Permission and mode state become central quickly, so Rampart should mature its profile and audit model before building team administration.
-- Session boundaries matter, so launcher, live session, history, and later remote attachment should be modeled as distinct product states.
-- Extension seams matter, but plugins, bridge modes, and broader orchestration should remain downstream of the trustworthy local enforcement loop.
+The WFP block-to-console pipeline is wired and verified under admin. The remaining work is confirming that a blocked outbound connection by a real agent (not a `.cmd` shim) surfaces as a violation event in the session console. This closes the only known gap in the Windows Native enforcement UX.
+
+### macOS and Linux
+
+`greywall` is a reference adapter for non-Windows paths. macOS and Linux enforcement is not a current priority; the Windows execution model must be solid and shipped first.

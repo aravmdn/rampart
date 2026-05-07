@@ -59,6 +59,7 @@ export function CapabilityPanel({
   engineName,
   capabilities,
 }: CapabilityPanelProps) {
+  const hasGaps = capabilities.some((c) => c.status !== "supported");
   return (
     <section className="panel">
       <div className="panel-header">
@@ -68,7 +69,11 @@ export function CapabilityPanel({
             {platformLabel} | {engineName}
           </p>
         </div>
-        <StatusBadge tone="warn">Show gaps before launch</StatusBadge>
+        {hasGaps ? (
+          <StatusBadge tone="warn">Gaps present</StatusBadge>
+        ) : (
+          <StatusBadge tone="info">All supported</StatusBadge>
+        )}
       </div>
       <ul className="plain-list">
         {capabilities.map((capability) => (
