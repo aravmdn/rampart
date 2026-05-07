@@ -73,6 +73,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - `WindowsJob`: initial implementation used `BasicLimitInformation` (class 2); `KILL_ON_JOB_CLOSE` requires `ExtendedLimitInformation` (class 9) on Windows 11 — fixed and runtime-verified
 - `WfpFilterAdd0`: returned `FWP_E_NULL_DISPLAY_NAME` due to null `filter.displayData.name` — fixed and runtime-verified
+- Windows agent spawn: `Command::new("claude")` failed for npm `.cmd` shims because `CreateProcessW` does not resolve PATHEXT extensions; added `cmd /C` dispatch for `.cmd` and `.bat` shims and `CREATE_NEW_CONSOLE` for terminal-first agents
+- `resolve_app_path`: now tries `.exe`, `.cmd`, `.bat` in PATHEXT order so WFP filters target the actual agent binary even for npm/pnpm-installed shims
+- WFP block events now produce both an audit row (Audit Stream) and a violation row (Violation View + Adjust policy flow) — previously only the audit row, so the GUI Violation View stayed empty when WFP fired
+- Profile picker `[signed]` badge: built-in presets are now signed at emission with `BUILTIN_SIGNING_SEED`; `verify_signature` returns `Valid` for all first-party presets
+- Failed launch: when the daemon returns `status=failed`, the desktop now reads back the last audit message and surfaces it as a "Launch error" panel instead of a frozen status badge
+- Multi-project support: project picker is no longer hardcoded to the current git repo; `add_project` / `remove_project` Tauri commands and an Add Project form in the launcher allow any local directory to be registered
+- Agent picker shows all 8 supported agents (was previously truncated to 2)
+- Sync status loaded on app mount instead of only after the first Save click; Sync Now button correctly enabled when the daemon already has a persisted config
+- Profile list re-fetches when the agent selection changes so the picker shows per-agent presets without a manual reload
+- Preflight panel renders an empty-state placeholder when no diagnostics apply
+- Org policy fetch / sync configure errors render under their panels instead of throwing unhandled rejections
 
 ### Security
 

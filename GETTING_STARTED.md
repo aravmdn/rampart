@@ -91,7 +91,7 @@ The **Violation View** panel (top-right) shows actions that were blocked. Each e
 - A platform note if the block came from an OS primitive
 - An **Adjust policy** button that opens the profile editor pre-populated with a targeted rule suggestion
 
-Violations from WFP network blocks fire at the OS level. The violation streaming pipeline is wired; end-to-end delivery to the console is not yet confirmed for all agent types in Windows Native mode (see [Known limitations](#known-limitations)).
+Violations from WFP network blocks fire at the OS level and are surfaced in the Violation View as `network blocked` entries with a target of `port <N>`. The Adjust policy button on a WFP violation pre-populates `allowed_hosts` with that target — replace `port <N>` with the actual hostname before saving (WFP only carries port information at the kernel level).
 
 ### Profile editor
 
@@ -178,9 +178,9 @@ If `node_modules` is missing (e.g., after cloning into a fresh worktree), run `p
 
 ## Known Limitations
 
-- **WFP violation streaming** — WFP outbound blocks fire at the OS level and are runtime-verified. End-to-end delivery of those blocks as violation events in the session console is not yet confirmed for all agent types in Windows Native mode. If the agent terminal shows a blocked connection but the Violation View stays empty, this is a known gap.
-- **WSL2 capability snapshot** — In WSL2 isolation mode, the capability snapshot still reflects Windows-native capabilities rather than WSL2-specific ones. This is cosmetic; enforcement is not affected.
-- **`.cmd` agent shims** — `resolve_app_path` resolves agent commands via `SearchPathW` with a hardcoded `.exe` extension. Agents distributed as `.cmd` wrappers will have WFP filters applied to the wrong image path. All first-class supported agents (`claude.exe`, `codex.exe`, etc.) are unaffected.
+- **WFP violation host names** — WFP fires at the kernel level and carries only the remote port, not the destination hostname. Network violations show `port <N>` as their target. The Adjust policy button still works; you'll edit the suggested entry to the actual hostname before saving.
+- **WSL2 capability snapshot** — In WSL2 isolation mode, the capability snapshot still reflects Windows-native capabilities rather than WSL2-specific ones. Cosmetic; enforcement is not affected.
+- **AppContainer isolation** — Reserved for a future release. The engine adapter layer leaves a clean seam for it.
 
 ---
 
