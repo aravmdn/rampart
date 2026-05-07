@@ -1040,6 +1040,14 @@ impl LocalProcessRunner {
         let adapter = AgentAdapter::for_tool(&session.agent_tool);
         let wsl2 = matches!(session.isolation_mode, policy_core::IsolationMode::Wsl2);
 
+        // Terminal-first agents (non-WSL2) need a proper PTY so TUI renderers
+        // (e.g. Claude Code's Ink UI) can display and accept input.
+        // Tauri is a GUI process with no console; CREATE_NEW_CONSOLE from a GUI
+        // parent sets STARTF_USESTDHANDLES with INVALID_HANDLE_VALUE — the
+        // console window opens but stdio is disconnected, producing a blank,
+        // non-interactive window. Delegate to Windows Terminal (wt.exe) instead.
+        let use_wt = cfg!(target_os = "windows") && adapter.terminal_first && !wsl2;
+
         let mut cmd = if wsl2 {
             // Run the agent inside WSL2: `wsl --cd <linux_path> -- <command> [args]`
             let mut c = Command::new("wsl");
@@ -1048,8 +1056,20 @@ impl LocalProcessRunner {
                 .arg("--")
                 .arg(&adapter.command);
             c
+        } else if use_wt {
+            // Launch via Windows Terminal: it owns the PTY and correctly wires
+            // stdin/stdout/stderr to the agent regardless of Tauri's console state.
+            let mut c = Command::new("wt");
+            c.arg("-d").arg(&session.project_path);
+            if is_cmd_shim(&adapter.command) {
+                c.arg("cmd").arg("/K").arg(&adapter.command);
+            } else {
+                c.arg(&adapter.command);
+            }
+            c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            c
         } else {
-            let mut c = if is_cmd_shim(&adapter.command) {
+            if is_cmd_shim(&adapter.command) {
                 let mut c = Command::new("cmd");
                 c.arg("/C").arg(&adapter.command).current_dir(&session.project_path);
                 c
@@ -1057,21 +1077,12 @@ impl LocalProcessRunner {
                 let mut c = Command::new(&adapter.command);
                 c.current_dir(&session.project_path);
                 c
-            };
-            c
-        };
-        // Terminal-first agents on Windows get a new console window so the user
-        // can interact with the agent directly. All other cases use null I/O.
-        let terminal_new_console = adapter.terminal_first && !wsl2;
-        if terminal_new_console {
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x0000_0010); // CREATE_NEW_CONSOLE
             }
-            #[cfg(not(target_os = "windows"))]
-            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-        } else {
+        };
+        // Null stdio for non-terminal-first and WSL2 agents.
+        // Terminal-first on Windows goes through wt.exe (already set above).
+        // Terminal-first on non-Windows inherits the parent terminal's stdio.
+        if !adapter.terminal_first || wsl2 {
             cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         }
         for arg in &adapter.default_args {
@@ -1102,25 +1113,31 @@ impl LocalProcessRunner {
 
         #[cfg(target_os = "windows")]
         if !wsl2 {
-            match WindowsJob::assign(pid) {
-                Ok(job) => {
-                    self.jobs.insert(session.id.clone(), job);
+            // Job Object and Low Integrity token target the direct child PID.
+            // When launched via wt.exe the direct child is Windows Terminal,
+            // not the agent process — skip PID-targeted primitives.
+            if !use_wt {
+                match WindowsJob::assign(pid) {
+                    Ok(job) => {
+                        self.jobs.insert(session.id.clone(), job);
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
+                            session.id
+                        );
+                    }
                 }
-                Err(error) => {
+
+                if let Err(error) = set_process_low_integrity(pid) {
                     eprintln!(
-                        "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
+                        "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
                         session.id
                     );
                 }
             }
 
-            if let Err(error) = set_process_low_integrity(pid) {
-                eprintln!(
-                    "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
-                    session.id
-                );
-            }
-
+            // WFP filters by app NT path (not PID) — still works for wt.exe sessions.
             match WfpNetworkGuard::open(pid, &adapter.command) {
                 Ok(guard) => {
                     let nt_path = guard.nt_path.clone();
