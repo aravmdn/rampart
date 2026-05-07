@@ -8,7 +8,7 @@ use engine_windows::{
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
     AuditEventCategory, AuditEventKind, AuditOutcome, CapabilitySupport, EngineCapabilitySnapshot,
-    Profile, Session, SessionStatus, ViolationEvent,
+    Profile, Session, SessionStatus, ViolationEvent, ViolationExplanation, ViolationKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -878,19 +878,23 @@ where
                     .unwrap_or(0);
                 let queue = self.events.entry(session_id.into()).or_default();
                 for (i, ev) in wfp_events.into_iter().enumerate() {
+                    let target = format!("port {}", ev.remote_port);
                     queue.push_back(SessionEventRecord::Audit(AuditEvent {
                         session_id: session_id.into(),
-                        sequence: base_seq + 1 + i as u64,
+                        sequence: base_seq + 1 + (i as u64) * 2,
                         occurred_at_ms: ev.occurred_at_ms,
                         kind: AuditEventKind::NetworkBlocked,
                         category: AuditEventCategory::PolicyEnforcement,
                         outcome: AuditOutcome::Blocked,
-                        message: format!(
-                            "WFP blocked outbound connection to port {}",
-                            ev.remote_port
-                        ),
+                        message: format!("WFP blocked outbound connection to {target}"),
                         violation: None,
                     }));
+                    queue.push_back(SessionEventRecord::Violation(wfp_violation_event(
+                        session_id,
+                        base_seq + 2 + (i as u64) * 2,
+                        ev.occurred_at_ms,
+                        target,
+                    )));
                 }
             }
             // Drop the monitor (unsubscribes from WFP). Must happen after drain
@@ -934,25 +938,69 @@ where
 
         // Append WFP blocked-connection events from the live monitor. These are
         // peeked (not drained) so they reappear on every poll until persisted at
-        // stop_session. Sequence numbers are assigned relative to the current list.
+        // stop_session. Each WFP block produces both an audit row (for the Audit
+        // Stream panel) and a violation row (for the Violation View panel and the
+        // Adjust policy flow). Sequence numbers are assigned relative to the
+        // current list.
         let base_seq = result.len() as u64 + 1;
         for (i, ev) in self.runner.peek_wfp_events(session_id).into_iter().enumerate() {
+            let target = format!("port {}", ev.remote_port);
             result.push(SessionEventRecord::Audit(AuditEvent {
                 session_id: session_id.into(),
-                sequence: base_seq + i as u64,
+                sequence: base_seq + (i as u64) * 2,
                 occurred_at_ms: ev.occurred_at_ms,
                 kind: AuditEventKind::NetworkBlocked,
                 category: AuditEventCategory::PolicyEnforcement,
                 outcome: AuditOutcome::Blocked,
-                message: format!(
-                    "WFP blocked outbound connection to port {}",
-                    ev.remote_port
-                ),
+                message: format!("WFP blocked outbound connection to {target}"),
                 violation: None,
             }));
+            result.push(SessionEventRecord::Violation(wfp_violation_event(
+                session_id,
+                base_seq + (i as u64) * 2 + 1,
+                ev.occurred_at_ms,
+                target,
+            )));
         }
 
         Ok(result)
+    }
+}
+
+/// Build a `ViolationEvent` from a WFP `BlockedNetworkEvent` so that the live
+/// session console's Violation View panel and the policy refinement flow ("Adjust
+/// policy" button) react to OS-level network blocks the same way they react to
+/// engine-emitted violations. Target uses `port <n>` because WFP only carries the
+/// remote port — host resolution from the kernel-level event is not available.
+fn wfp_violation_event(
+    session_id: &str,
+    sequence: u64,
+    occurred_at_ms: u64,
+    target: String,
+) -> ViolationEvent {
+    ViolationEvent {
+        session_id: session_id.into(),
+        sequence,
+        occurred_at_ms,
+        kind: ViolationKind::Network,
+        action: "network".into(),
+        target,
+        rule_id: "network.app-id-block".into(),
+        rule_label: "Outbound network blocked by WFP".into(),
+        reason: "Default-deny network policy denied this outbound connection.".into(),
+        platform_note: Some(
+            "Block fired at the Windows Filtering Platform per-app-ID filter (kernel-level).".into(),
+        ),
+        explanation: Some(ViolationExplanation {
+            rule_description:
+                "The agent attempted an outbound connection that is not on the profile's allowed_hosts list."
+                    .into(),
+            platform_limitation: None,
+            remediation_hint: Some(
+                "Add the host to the profile's allowed_hosts list, or relax network.default_action to allow."
+                    .into(),
+            ),
+        }),
     }
 }
 

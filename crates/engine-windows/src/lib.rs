@@ -464,7 +464,9 @@ impl std::error::Error for SaclError {}
 
 /// Resolve a short command name (e.g. "claude") to a full Win32 path by
 /// searching PATH. If the input already contains a path separator, returns it
-/// unchanged. Returns `None` if the executable cannot be located.
+/// unchanged. Tries `.exe`, `.cmd`, and `.bat` extensions in PATHEXT order so
+/// that npm/pnpm-installed agent shims (`claude.cmd`) are located. Returns
+/// `None` if the executable cannot be located under any extension.
 #[cfg(target_os = "windows")]
 fn resolve_app_path(command: &str) -> Option<String> {
     if command.contains('\\') || command.contains('/') {
@@ -473,24 +475,27 @@ fn resolve_app_path(command: &str) -> Option<String> {
     use windows_sys::Win32::Storage::FileSystem::SearchPathW;
 
     let name_wide: Vec<u16> = command.encode_utf16().chain(std::iter::once(0u16)).collect();
-    let ext_wide: Vec<u16> = ".exe\0".encode_utf16().collect();
-    let mut buf = vec![0u16; 1024];
-    let mut file_part: *mut u16 = core::ptr::null_mut();
 
-    unsafe {
-        let len = SearchPathW(
-            core::ptr::null(),
-            name_wide.as_ptr(),
-            ext_wide.as_ptr(),
-            buf.len() as u32,
-            buf.as_mut_ptr(),
-            &mut file_part,
-        );
-        if len == 0 {
-            return None;
+    for ext in &[".exe\0", ".cmd\0", ".bat\0"] {
+        let ext_wide: Vec<u16> = ext.encode_utf16().collect();
+        let mut buf = vec![0u16; 1024];
+        let mut file_part: *mut u16 = core::ptr::null_mut();
+
+        let len = unsafe {
+            SearchPathW(
+                core::ptr::null(),
+                name_wide.as_ptr(),
+                ext_wide.as_ptr(),
+                buf.len() as u32,
+                buf.as_mut_ptr(),
+                &mut file_part,
+            )
+        };
+        if len != 0 {
+            return Some(String::from_utf16_lossy(&buf[..len as usize]));
         }
-        Some(String::from_utf16_lossy(&buf[..len as usize]))
     }
+    None
 }
 
 /// Convert a Win32 path (e.g. `C:\path\to\app.exe`) to an NT device path
