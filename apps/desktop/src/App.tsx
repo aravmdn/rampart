@@ -130,6 +130,8 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [orgPolicyUrl, setOrgPolicyUrl] = useState("");
   const [orgPolicy, setOrgPolicy] = useState<import("./daemon/contracts").OrgPolicy | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const [addProjectPath, setAddProjectPath] = useState("");
 
   useEffect(() => {
     void (async () => {
@@ -332,6 +334,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       return;
     }
 
+    setLaunchError(null);
     setSession({
       id: null,
       status: "launching",
@@ -341,41 +344,52 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     });
     setView("session");
 
-    const launched = await daemonClient.launchSession({
-      projectPath: selectedProject.path,
-      agentId: selectedAgent.id,
-      profileId: selectedProfile.id,
-    });
-    const sessionEvents = await daemonClient.streamSessionEvents(launched.id ?? "");
-    const recentHistory = await daemonClient.listSessionHistory();
+    try {
+      const launched = await daemonClient.launchSession({
+        projectPath: selectedProject.path,
+        agentId: selectedAgent.id,
+        profileId: selectedProfile.id,
+      });
+      const sessionEvents = await daemonClient.streamSessionEvents(launched.id ?? "");
+      const recentHistory = await daemonClient.listSessionHistory();
 
-    setSession({
-      id: launched.id,
-      status: launched.status,
-      projectPath: launched.projectPath,
-      profileName: selectedProfile.displayName,
-      agentName: selectedAgent.label,
-    });
-    setEvents(
-      sessionEvents.audit.map((event) => ({
-        id: event.id,
-        label: event.kind,
-        message: event.message,
-      })),
-    );
-    setViolations(
-      sessionEvents.violations.map((violation) => ({
-        id: violation.id,
-        title: `${violation.operation} blocked`,
-        detail: explainViolation(violation),
-        policyRuleId: violation.ruleId,
-        policyRuleLabel: violation.ruleLabel ?? "Project scope guard",
-        platformNote: violation.platformNote ?? undefined,
-        operation: violation.operation,
-        target: violation.target,
-      })),
-    );
-    setHistory(recentHistory);
+      setSession({
+        id: launched.id,
+        status: launched.status,
+        projectPath: launched.projectPath,
+        profileName: selectedProfile.displayName,
+        agentName: selectedAgent.label,
+      });
+      setEvents(
+        sessionEvents.audit.map((event) => ({
+          id: event.id,
+          label: event.kind,
+          message: event.message,
+        })),
+      );
+      setViolations(
+        sessionEvents.violations.map((violation) => ({
+          id: violation.id,
+          title: `${violation.operation} blocked`,
+          detail: explainViolation(violation),
+          policyRuleId: violation.ruleId,
+          policyRuleLabel: violation.ruleLabel ?? "Project scope guard",
+          platformNote: violation.platformNote ?? undefined,
+          operation: violation.operation,
+          target: violation.target,
+        })),
+      );
+      setHistory(recentHistory);
+    } catch (err) {
+      setSession({
+        id: null,
+        status: "failed",
+        projectPath: selectedProject.path,
+        profileName: selectedProfile.displayName,
+        agentName: selectedAgent.label,
+      });
+      setLaunchError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleStop() {
@@ -396,6 +410,25 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setSession({ id: null, status: "idle", projectPath: null, profileName: null, agentName: null });
     setEvents([]);
     setViolations([]);
+    setLaunchError(null);
+  }
+
+  async function handleAddProject() {
+    const path = addProjectPath.trim();
+    if (!path) return;
+    await daemonClient.addProject(path);
+    setAddProjectPath("");
+    const launchContext = await daemonClient.loadLaunchContext();
+    setProjects(launchContext.projects);
+  }
+
+  async function handleRemoveProject(path: string) {
+    await daemonClient.removeProject(path);
+    const launchContext = await daemonClient.loadLaunchContext();
+    setProjects(launchContext.projects);
+    if (projects.find((p) => p.id === projectId)?.path === path) {
+      setProjectId(launchContext.projects[0]?.id ?? null);
+    }
   }
 
   async function handleOrgPolicySave() {
@@ -509,6 +542,43 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
               selectedId={projectId}
               onSelect={setProjectId}
             />
+            <section className="panel">
+              <h2>Add project</h2>
+              <label className="field-label">
+                Project path
+                <input
+                  className="field-input"
+                  type="text"
+                  placeholder="C:\path\to\project"
+                  value={addProjectPath}
+                  onChange={(e) => setAddProjectPath(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { void handleAddProject(); } }}
+                />
+              </label>
+              <div className="action-row">
+                <button className="secondary-button" type="button" onClick={() => { void handleAddProject(); }}>
+                  Add
+                </button>
+              </div>
+              {projects.filter((p) => p.source === "user-added").length > 0 ? (
+                <ul className="plain-list">
+                  {projects.filter((p) => p.source === "user-added").map((p) => (
+                    <li key={p.id}>
+                      <span>{p.label}</span>
+                      <span className="muted"> {p.path}</span>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        style={{ marginLeft: "0.5rem" }}
+                        onClick={() => { void handleRemoveProject(p.path); }}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
             <PickerSection
               title="Agent picker"
               subtitle="Choose supported agent tool."
@@ -738,6 +808,12 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       <div className="columns">
         <div className="column">
           <SessionStatusPanel value={session} />
+          {launchError ? (
+            <section className="panel">
+              <h2>Launch error</h2>
+              <p className="muted">{launchError}</p>
+            </section>
+          ) : null}
           <section className="panel action-panel">
             <button className="secondary-button" type="button" onClick={handleStop} disabled={!session.id}>
               Stop session

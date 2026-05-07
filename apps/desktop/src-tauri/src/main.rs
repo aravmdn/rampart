@@ -250,6 +250,32 @@ fn preflight_check(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn add_project(
+    state: State<'_, DesktopDaemonState>,
+    path: String,
+) -> Result<(), String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .add_project(path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn remove_project(
+    state: State<'_, DesktopDaemonState>,
+    path: String,
+) -> Result<(), String> {
+    state
+        .service
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_string())?
+        .remove_project(path)
+        .map_err(|error| error.to_string())
+}
+
 fn build_service() -> Result<RampartService<ActiveEngine>, String> {
     #[cfg(target_os = "windows")]
     let engine = WindowsEnforcer::new();
@@ -287,6 +313,8 @@ fn main() {
             configure_org_policy_url,
             fetch_org_policy,
             current_org_policy,
+            add_project,
+            remove_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rampart desktop shell");

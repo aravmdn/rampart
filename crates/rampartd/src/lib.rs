@@ -429,6 +429,34 @@ fn which_exists(command: &str) -> bool {
     }
 }
 
+/// Returns true when `command` resolves to a `.cmd` or `.bat` shim on PATH.
+///
+/// Windows npm/pnpm installs create `.cmd` shims; `CreateProcessW` does not
+/// resolve these extensions, so they require dispatch through `cmd.exe /C`.
+#[cfg(target_os = "windows")]
+fn is_cmd_shim(command: &str) -> bool {
+    if command.contains('\\') || command.contains('/') {
+        let lower = command.to_ascii_lowercase();
+        return lower.ends_with(".cmd") || lower.ends_with(".bat");
+    }
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in path_var.split(';') {
+            let base = Path::new(dir).join(command);
+            for ext in &["cmd", "bat"] {
+                if base.with_extension(ext).exists() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_cmd_shim(_command: &str) -> bool {
+    false
+}
+
 // ---------------------------------------------------------------------------
 // Flattened capability items for the UI
 // ---------------------------------------------------------------------------
@@ -973,11 +1001,31 @@ impl LocalProcessRunner {
                 .arg(&adapter.command);
             c
         } else {
-            let mut c = Command::new(&adapter.command);
-            c.current_dir(&session.project_path);
+            let mut c = if is_cmd_shim(&adapter.command) {
+                let mut c = Command::new("cmd");
+                c.arg("/C").arg(&adapter.command).current_dir(&session.project_path);
+                c
+            } else {
+                let mut c = Command::new(&adapter.command);
+                c.current_dir(&session.project_path);
+                c
+            };
             c
         };
-        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        // Terminal-first agents on Windows get a new console window so the user
+        // can interact with the agent directly. All other cases use null I/O.
+        let terminal_new_console = adapter.terminal_first && !wsl2;
+        if terminal_new_console {
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0000_0010); // CREATE_NEW_CONSOLE
+            }
+            #[cfg(not(target_os = "windows"))]
+            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        } else {
+            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        }
         for arg in &adapter.default_args {
             cmd.arg(arg);
         }
@@ -1199,6 +1247,8 @@ struct PersistedState {
     history: Vec<SessionHistoryRecord>,
     #[serde(default)]
     custom_profiles: Vec<ProfileDetail>,
+    #[serde(default)]
+    custom_projects: Vec<String>,
     #[serde(default)]
     sync_config: Option<SyncConfig>,
     #[serde(default)]
@@ -1449,6 +1499,11 @@ pub trait ServiceQueryApi {
     fn fetch_org_policy(&mut self) -> Result<Option<OrgPolicy>, ServiceError>;
     /// Return the in-memory cached org policy without network fetch.
     fn current_org_policy(&self) -> Result<Option<OrgPolicy>, ServiceError>;
+    /// Append a project directory path to the persisted project list.
+    /// No-op if the path is already present.
+    fn add_project(&self, path: String) -> Result<(), ServiceError>;
+    /// Remove a project directory path from the persisted project list.
+    fn remove_project(&self, path: String) -> Result<(), ServiceError>;
 }
 
 pub struct RampartService<E = GreywallAdapter> {
@@ -1566,6 +1621,7 @@ where
     E: EnforcementEngine,
 {
     fn launch_context(&self) -> Result<LaunchContext, ServiceError> {
+        let state = self.store.load_state()?;
         let capabilities = self.daemon.detect_capabilities()?;
         let capability_items = flatten_capabilities(&capabilities);
         let project_root = detect_repo_root()
@@ -1574,7 +1630,7 @@ where
         let profiles =
             profiles_for_agent(self.selected.agent_id.as_deref(), &project_root);
         Ok(LaunchContext {
-            projects: detect_projects()?,
+            projects: detect_projects(&state.custom_projects)?,
             agents: default_agents(),
             profiles: profiles
                 .iter()
@@ -1773,6 +1829,22 @@ where
         let state = self.store.load_state()?;
         Ok(state.cached_org_policy.clone())
     }
+
+    fn add_project(&self, path: String) -> Result<(), ServiceError> {
+        let mut state = self.store.load_state()?;
+        if !state.custom_projects.contains(&path) {
+            state.custom_projects.push(path);
+            self.store.save_state(&state)?;
+        }
+        Ok(())
+    }
+
+    fn remove_project(&self, path: String) -> Result<(), ServiceError> {
+        let mut state = self.store.load_state()?;
+        state.custom_projects.retain(|p| p != &path);
+        self.store.save_state(&state)?;
+        Ok(())
+    }
 }
 
 fn upsert_history_record(history: &mut Vec<SessionHistoryRecord>, record: SessionHistoryRecord) {
@@ -1784,7 +1856,7 @@ fn upsert_history_record(history: &mut Vec<SessionHistoryRecord>, record: Sessio
     history.sort_by(|left, right| right.session.started_at_ms.cmp(&left.session.started_at_ms));
 }
 
-fn detect_projects() -> Result<Vec<ProjectSummary>, ServiceError> {
+fn detect_projects(custom_projects: &[String]) -> Result<Vec<ProjectSummary>, ServiceError> {
     let repo_root = detect_repo_root()?;
     let label = repo_root
         .file_name()
@@ -1792,12 +1864,26 @@ fn detect_projects() -> Result<Vec<ProjectSummary>, ServiceError> {
         .unwrap_or("Project")
         .to_string();
 
-    Ok(vec![ProjectSummary {
+    let mut projects = vec![ProjectSummary {
         id: slugify(&label),
         label,
         path: repo_root.display().to_string(),
         source: "detected-current-workspace".into(),
-    }])
+    }];
+    for path in custom_projects {
+        let label = Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path.as_str())
+            .to_string();
+        projects.push(ProjectSummary {
+            id: slugify(&label),
+            label,
+            path: path.clone(),
+            source: "user-added".into(),
+        });
+    }
+    Ok(projects)
 }
 
 fn detect_repo_root() -> Result<PathBuf, ServiceError> {

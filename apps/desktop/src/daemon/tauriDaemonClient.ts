@@ -458,4 +458,10 @@ export const tauriDaemonClient: DaemonApi = {
       })),
     }));
   },
+  async addProject(path: string): Promise<void> {
+    await invoke("add_project", { path });
+  },
+  async removeProject(path: string): Promise<void> {
+    await invoke("remove_project", { path });
+  },
 };

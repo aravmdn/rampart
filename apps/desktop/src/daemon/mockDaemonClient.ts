@@ -433,6 +433,12 @@ export const mockDaemonClient: DaemonApi = {
     await pause(20);
     return null;
   },
+  async addProject(_path: string): Promise<void> {
+    await pause(20);
+  },
+  async removeProject(_path: string): Promise<void> {
+    await pause(20);
+  },
   async listSessionHistory(): Promise<SessionHistoryEntry[]> {
     await pause(40);
     return Array.from(sessions.entries()).map(([id, session]) => ({

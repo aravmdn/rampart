@@ -233,4 +233,6 @@ export type DaemonApi = {
   configureOrgPolicyUrl: (url: string | null) => Promise<void>;
   fetchOrgPolicy: () => Promise<OrgPolicy | null>;
   currentOrgPolicy: () => Promise<OrgPolicy | null>;
+  addProject: (path: string) => Promise<void>;
+  removeProject: (path: string) => Promise<void>;
 };
