@@ -9,7 +9,32 @@ import type {
   SessionStatusView,
   ViolationView,
 } from "./types";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, type StatusBadgeTone } from "../components/StatusBadge";
+import { AlertIcon, CircleDotIcon, TerminalIcon } from "./icons";
+
+function eventAccentClass(label: string): string {
+  const k = label.toLowerCase();
+  if (k.includes("violation") || k.includes("block")) return "rampart-event-item--violation";
+  if (k.includes("network") || k.includes("connect") || k.includes("dns") || k.includes("http")) {
+    return "rampart-event-item--network";
+  }
+  if (k.includes("file") || k.includes("read") || k.includes("write") || k.includes("path") || k.includes("fs")) {
+    return "rampart-event-item--filesystem";
+  }
+  if (k.includes("process") || k.includes("exec") || k.includes("spawn") || k.includes("command")) {
+    return "rampart-event-item--process";
+  }
+  if (k.includes("session") || k.includes("lifecycle") || k.includes("launch") || k.includes("stop") || k.includes("exit")) {
+    return "rampart-event-item--lifecycle";
+  }
+  return "rampart-event-item--lifecycle";
+}
+
+function capabilityTone(status: CapabilityView["status"]): StatusBadgeTone {
+  if (status === "supported") return "success";
+  if (status === "unsupported") return "error";
+  return "warn";
+}
 
 type PickerSectionProps = {
   title: string;
@@ -72,14 +97,14 @@ export function CapabilityPanel({
         {hasGaps ? (
           <StatusBadge tone="warn">Gaps present</StatusBadge>
         ) : (
-          <StatusBadge tone="info">All supported</StatusBadge>
+          <StatusBadge tone="success">All supported</StatusBadge>
         )}
       </div>
       <ul className="plain-list">
         {capabilities.map((capability) => (
           <li key={capability.key}>
             <strong>{capability.label}</strong>{" "}
-            <StatusBadge tone={capability.status === "supported" ? "info" : "warn"}>
+            <StatusBadge tone={capabilityTone(capability.status)}>
               {capability.status}
             </StatusBadge>
             <div className="muted">{capability.detail}</div>
@@ -95,7 +120,14 @@ type SessionStatusPanelProps = {
 };
 
 export function SessionStatusPanel({ value }: SessionStatusPanelProps) {
-  const tone = value.status === "active" ? "info" : value.status === "failed" ? "error" : "warn";
+  const tone: StatusBadgeTone =
+    value.status === "active"
+      ? "success"
+      : value.status === "failed"
+        ? "error"
+        : value.status === "launching"
+          ? "info"
+          : "warn";
 
   return (
     <section className="panel">
@@ -113,20 +145,34 @@ export function SessionStatusPanel({ value }: SessionStatusPanelProps) {
 
 type EventListProps = {
   events: EventView[];
+  showLivePill?: boolean;
+  lastEventAt?: string | null;
 };
 
-export function EventList({ events }: EventListProps) {
+export function EventList({ events, showLivePill = false, lastEventAt = null }: EventListProps) {
   return (
     <section className="panel">
-      <h2>Audit Stream</h2>
+      <div className="panel-header">
+        <h2>Audit Stream</h2>
+        {showLivePill ? (
+          <span className="rampart-session-pill" aria-label="Live event counter">
+            <span className="rampart-session-pill-dot" />
+            {events.length} event{events.length === 1 ? "" : "s"}
+            {lastEventAt ? <span className="muted"> · {lastEventAt}</span> : null}
+          </span>
+        ) : null}
+      </div>
       {events.length === 0 ? (
-        <p className="muted">No audit events yet.</p>
+        <div className="rampart-empty-state">
+          <TerminalIcon size={28} className="rampart-empty-state-icon" />
+          <p>No events yet — agent has just started.</p>
+        </div>
       ) : (
-        <ul className="plain-list">
+        <ul className="rampart-event-list">
           {events.map((event) => (
-            <li key={event.id}>
-              <strong>{event.label}</strong>
-              <div>{event.message}</div>
+            <li key={event.id} className={`rampart-event-item ${eventAccentClass(event.label)}`}>
+              <span className="rampart-event-kind">{event.label}</span>
+              <div className="rampart-event-message">{event.message}</div>
             </li>
           ))}
         </ul>
@@ -144,11 +190,14 @@ export function ViolationList({ violations }: ViolationListProps) {
     <section className="panel">
       <h2>Violation View</h2>
       {violations.length === 0 ? (
-        <p className="muted">No blocked actions yet.</p>
+        <div className="rampart-empty-state">
+          <CircleDotIcon size={28} className="rampart-empty-state-icon" />
+          <p>No blocked actions yet.</p>
+        </div>
       ) : (
-        <ul className="plain-list">
+        <ul className="rampart-event-list">
           {violations.map((violation) => (
-            <li key={violation.id}>
+            <li key={violation.id} className="rampart-event-item rampart-event-item--violation">
               <strong>{violation.title}</strong>
               <div>{violation.detail}</div>
               <div className="muted">
@@ -176,7 +225,10 @@ export function HistoryList({ sessions, selectedId, onSelect }: HistoryListProps
     <section className="panel">
       <h2>Session History</h2>
       {sessions.length === 0 ? (
-        <p className="muted">No persisted sessions yet.</p>
+        <div className="rampart-empty-state">
+          <AlertIcon size={28} className="rampart-empty-state-icon" />
+          <p>No prior sessions — launch a sandboxed session from the launcher to populate history.</p>
+        </div>
       ) : (
         <ul className="plain-list">
           {sessions.map((session) => (

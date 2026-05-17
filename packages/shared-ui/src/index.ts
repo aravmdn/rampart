@@ -22,3 +22,18 @@ export {
   ViolationList,
 } from "./lib/ui";
 export { explainViolation } from "./lib/explanations";
+export {
+  AlertIcon,
+  CheckIcon,
+  CircleDotIcon,
+  CpuIcon,
+  EditIcon,
+  FileIcon,
+  FolderIcon,
+  HistoryIcon,
+  MoonIcon,
+  NetworkIcon,
+  ShieldIcon,
+  SunIcon,
+  TerminalIcon,
+} from "./lib/icons";

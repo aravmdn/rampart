@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 
-export type StatusBadgeTone = "info" | "warn" | "error";
+export type StatusBadgeTone = "info" | "warn" | "error" | "success";
 
 type StatusBadgeProps = PropsWithChildren<{
   tone?: StatusBadgeTone;
@@ -11,4 +11,3 @@ export function StatusBadge({ tone = "info", children }: StatusBadgeProps) {
     <span className={`rampart-badge rampart-badge--${tone}`}>{children}</span>
   );
 }
-

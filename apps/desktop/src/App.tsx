@@ -1,14 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   CapabilityPanel,
+  EditIcon,
   EventList,
+  FolderIcon,
   HistoryDetailPanel,
+  HistoryIcon,
   HistoryList,
+  MoonIcon,
   PickerSection,
   ProfileEditorPanel,
   SessionStatusPanel,
+  ShieldIcon,
   StatusBadge,
-  ViolationList,
+  SunIcon,
+  TerminalIcon,
   explainViolation,
   type CapabilityView,
   type EventView,
@@ -35,6 +41,15 @@ import {
 } from "./daemon/contracts";
 
 type AppView = "launcher" | "session" | "history" | "profile-editor";
+type Theme = "light" | "dark";
+const THEME_STORAGE_KEY = "rampart.theme";
+
+const VIEW_LABELS: Record<AppView, string> = {
+  launcher: "Launcher",
+  session: "Active session",
+  history: "History",
+  "profile-editor": "Profile editor",
+};
 
 function toCapabilityView(snapshot: EngineCapabilitySnapshot): CapabilityView[] {
   const labels: Record<string, string> = {
@@ -60,6 +75,10 @@ function hasUnsupported(snapshot: EngineCapabilitySnapshot | null): boolean {
 
 function formatMs(ms: number): string {
   return new Date(ms).toLocaleString();
+}
+
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString();
 }
 
 function formatDuration(startMs: number, endMs: number | null): string {
@@ -96,12 +115,27 @@ function toHistorySessionView(
   };
 }
 
+function initialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // localStorage may be blocked in some embeds; fall through to media query.
+  }
+  if (typeof window.matchMedia === "function") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "light";
+}
+
 type AppProps = {
   daemonClient?: DaemonApi;
 };
 
 function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [view, setView] = useState<AppView>("launcher");
+  const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [agents, setAgents] = useState<AgentTool[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -119,6 +153,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   });
   const [events, setEvents] = useState<EventView[]>([]);
   const [violations, setViolations] = useState<ViolationView[]>([]);
+  const [lastEventAtMs, setLastEventAtMs] = useState<number | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [editorProfile, setEditorProfile] = useState<PolicyEditorView | null>(null);
@@ -136,6 +171,36 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
   const [orgPolicyError, setOrgPolicyError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // ignore storage failures
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (event: MediaQueryListEvent) => {
+      try {
+        if (window.localStorage.getItem(THEME_STORAGE_KEY)) return;
+      } catch {
+        // ignore
+      }
+      setTheme(event.matches ? "dark" : "light");
+    };
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -161,15 +226,15 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     })();
   }, [daemonClient]);
 
-  // Re-fetch profile list whenever the agent selection changes so the picker
-  // reflects per-agent presets (claude-code.standard vs codex.standard, etc).
   useEffect(() => {
     if (!loaded || !agentId) return;
+    setProfilesLoading(true);
     void daemonClient.loadLaunchContext().then((ctx) => {
       setProfiles(ctx.profiles);
       setProfileId((prev) =>
         prev && ctx.profiles.some((p) => p.id === prev) ? prev : ctx.profiles[0]?.id ?? null,
       );
+      setProfilesLoading(false);
     });
   }, [agentId, daemonClient, loaded]);
 
@@ -185,9 +250,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     });
   }, [agentId, daemonClient, profileId, projectId, projects]);
 
-  // Poll session events while a session is live (launching or active). Keep polling
-  // through the launching window so the very first events surface as soon as the
-  // session goes active, without a 3-second blank gap.
   useEffect(() => {
     if (!session.id) return;
     if (session.status === "stopped" || session.status === "failed" || session.status === "idle") return;
@@ -200,6 +262,9 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
             message: event.message,
           })),
         );
+        if (sessionEvents.audit.length > 0) {
+          setLastEventAtMs(Date.now());
+        }
         setViolations(
           sessionEvents.violations.map((violation) => ({
             id: violation.id,
@@ -217,7 +282,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     return () => clearInterval(interval);
   }, [daemonClient, session.id, session.status]);
 
-  // Run preflight whenever selections change
   useEffect(() => {
     const selectedProject = projects.find((project) => project.id === projectId);
     if (!selectedProject || !agentId || !profileId) {
@@ -238,7 +302,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     id: agent.id,
     title: agent.label,
     description: agent.terminalFirst
-      ? `${agent.detail} Terminal-first: interaction happens in the agent\u2019s own terminal.`
+      ? `${agent.detail} Terminal-first: interaction happens in the agent’s own terminal.`
       : agent.detail,
   }));
 
@@ -357,6 +421,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     }
 
     setLaunchError(null);
+    setLastEventAtMs(null);
     setSession({
       id: null,
       status: "launching",
@@ -375,8 +440,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
       const sessionEvents = await daemonClient.streamSessionEvents(launched.id ?? "");
       const recentHistory = await daemonClient.listSessionHistory();
 
-      // The daemon may return status="failed" with an error captured as an audit
-      // event rather than throwing. Surface it so the user sees the reason.
       if (launched.status === "failed") {
         const lastMsg = sessionEvents.audit.length > 0
           ? sessionEvents.audit[sessionEvents.audit.length - 1].message
@@ -398,6 +461,9 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
           message: event.message,
         })),
       );
+      if (sessionEvents.audit.length > 0) {
+        setLastEventAtMs(Date.now());
+      }
       setViolations(
         sessionEvents.violations.map((violation) => ({
           id: violation.id,
@@ -441,6 +507,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     setSession({ id: null, status: "idle", projectPath: null, profileName: null, agentName: null });
     setEvents([]);
     setViolations([]);
+    setLastEventAtMs(null);
     setLaunchError(null);
   }
 
@@ -513,7 +580,276 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     }
   }
 
-  // ── Profile editor view ────────────────────────────────────────────
+  function toggleTheme() {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }
+
+  const sidebarItems: { id: AppView; label: string; icon: ReactElement }[] = [
+    { id: "launcher", label: "Launcher", icon: <FolderIcon size={18} /> },
+    { id: "session", label: "Active session", icon: <TerminalIcon size={18} /> },
+    { id: "history", label: "History", icon: <HistoryIcon size={18} /> },
+    { id: "profile-editor", label: "Profile editor", icon: <EditIcon size={18} /> },
+  ];
+
+  function navigateTo(target: AppView) {
+    if (target === "profile-editor") {
+      void openProfileEditor("launcher");
+      return;
+    }
+    if (target === "session") {
+      setView("session");
+      return;
+    }
+    if (target === "history") {
+      setView("history");
+      return;
+    }
+    setView("launcher");
+  }
+
+  return (
+    <div className="app-frame">
+      <header className="app-header" role="banner">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden>
+            <ShieldIcon size={22} />
+          </span>
+          <div className="brand-text">
+            <span className="brand-name">Rampart</span>
+            <span className="brand-tagline">Least-privilege sandbox for AI coding agents</span>
+          </div>
+        </div>
+        <div className="header-actions">
+          <span className="current-view-pill" aria-label="Current view">
+            {VIEW_LABELS[view]}
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-pressed={theme === "dark"}
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+          </button>
+        </div>
+      </header>
+
+      <nav className="tab-bar" aria-label="Views (compact)">
+        {sidebarItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`sidebar-item ${view === item.id ? "sidebar-item-active" : ""}`}
+            onClick={() => navigateTo(item.id)}
+          >
+            <span className="sidebar-item-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="app-body">
+        <aside className="sidebar" aria-label="Main navigation">
+          <span className="sidebar-section-label">Workspace</span>
+          {sidebarItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`sidebar-item ${view === item.id ? "sidebar-item-active" : ""}`}
+              aria-current={view === item.id ? "page" : undefined}
+              onClick={() => navigateTo(item.id)}
+            >
+              <span className="sidebar-item-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <span className="sidebar-spacer" />
+        </aside>
+
+        <ViewContent
+          view={view}
+          loaded={loaded}
+          editorProfile={editorProfile}
+          editorSuggestion={editorSuggestion}
+          historySessions={historySessions}
+          selectedHistoryId={selectedHistoryId}
+          setSelectedHistoryId={setSelectedHistoryId}
+          setView={setView}
+          handleSaveProfile={handleSaveProfile}
+          handleCancelEditor={handleCancelEditor}
+          projects={projects}
+          projectId={projectId}
+          setProjectId={setProjectId}
+          projectItems={projectItems}
+          agentItems={agentItems}
+          agentId={agentId}
+          setAgentId={setAgentId}
+          profileItems={profileItems}
+          profileId={profileId}
+          setProfileId={setProfileId}
+          profilesLoading={profilesLoading}
+          snapshot={snapshot}
+          preflight={preflight}
+          selectedAgent={selectedAgent}
+          addProjectPath={addProjectPath}
+          setAddProjectPath={setAddProjectPath}
+          handleAddProject={handleAddProject}
+          handleRemoveProject={handleRemoveProject}
+          addProjectError={addProjectError}
+          openProfileEditor={openProfileEditor}
+          handleLaunch={handleLaunch}
+          syncEndpoint={syncEndpoint}
+          setSyncEndpoint={setSyncEndpoint}
+          syncToken={syncToken}
+          setSyncToken={setSyncToken}
+          syncStripPaths={syncStripPaths}
+          setSyncStripPaths={setSyncStripPaths}
+          syncStatus={syncStatus}
+          handleSyncSave={handleSyncSave}
+          handleSyncNow={handleSyncNow}
+          syncError={syncError}
+          orgPolicyUrl={orgPolicyUrl}
+          setOrgPolicyUrl={setOrgPolicyUrl}
+          orgPolicy={orgPolicy}
+          handleOrgPolicySave={handleOrgPolicySave}
+          handleOrgPolicyFetch={handleOrgPolicyFetch}
+          orgPolicyError={orgPolicyError}
+          history={history}
+          session={session}
+          events={events}
+          violations={violations}
+          lastEventAtMs={lastEventAtMs}
+          launchError={launchError}
+          handleStop={handleStop}
+          handleBackToLauncher={handleBackToLauncher}
+          violationSuggestion={violationSuggestion}
+        />
+      </div>
+    </div>
+  );
+}
+
+type ViewContentProps = {
+  view: AppView;
+  loaded: boolean;
+  editorProfile: PolicyEditorView | null;
+  editorSuggestion: PolicySuggestion | undefined;
+  historySessions: HistorySessionView[];
+  selectedHistoryId: string | null;
+  setSelectedHistoryId: (id: string | null) => void;
+  setView: (v: AppView) => void;
+  handleSaveProfile: (updated: PolicyEditorView) => Promise<void>;
+  handleCancelEditor: () => void;
+  projects: ProjectSummary[];
+  projectId: string | null;
+  setProjectId: (id: string | null) => void;
+  projectItems: OptionItem[];
+  agentItems: OptionItem[];
+  agentId: string | null;
+  setAgentId: (id: string | null) => void;
+  profileItems: OptionItem[];
+  profileId: string | null;
+  setProfileId: (id: string | null) => void;
+  profilesLoading: boolean;
+  snapshot: EngineCapabilitySnapshot | null;
+  preflight: PreflightReport | null;
+  selectedAgent: AgentTool | undefined;
+  addProjectPath: string;
+  setAddProjectPath: (s: string) => void;
+  handleAddProject: () => Promise<void>;
+  handleRemoveProject: (path: string) => Promise<void>;
+  addProjectError: string | null;
+  openProfileEditor: (returnView: "launcher" | "session", suggestion?: PolicySuggestion) => Promise<void>;
+  handleLaunch: () => Promise<void>;
+  syncEndpoint: string;
+  setSyncEndpoint: (s: string) => void;
+  syncToken: string;
+  setSyncToken: (s: string) => void;
+  syncStripPaths: boolean;
+  setSyncStripPaths: (b: boolean) => void;
+  syncStatus: SyncStatus | null;
+  handleSyncSave: () => Promise<void>;
+  handleSyncNow: () => Promise<void>;
+  syncError: string | null;
+  orgPolicyUrl: string;
+  setOrgPolicyUrl: (s: string) => void;
+  orgPolicy: import("./daemon/contracts").OrgPolicy | null;
+  handleOrgPolicySave: () => Promise<void>;
+  handleOrgPolicyFetch: () => Promise<void>;
+  orgPolicyError: string | null;
+  history: SessionHistoryEntry[];
+  session: SessionStatusView;
+  events: EventView[];
+  violations: ViolationView[];
+  lastEventAtMs: number | null;
+  launchError: string | null;
+  handleStop: () => Promise<void>;
+  handleBackToLauncher: () => void;
+  violationSuggestion: (v: ViolationView) => PolicySuggestion | undefined;
+};
+
+function ViewContent(props: ViewContentProps) {
+  const {
+    view,
+    loaded,
+    editorProfile,
+    editorSuggestion,
+    historySessions,
+    selectedHistoryId,
+    setSelectedHistoryId,
+    setView,
+    handleSaveProfile,
+    handleCancelEditor,
+    projects,
+    projectId,
+    setProjectId,
+    projectItems,
+    agentItems,
+    agentId,
+    setAgentId,
+    profileItems,
+    profileId,
+    setProfileId,
+    profilesLoading,
+    snapshot,
+    preflight,
+    selectedAgent,
+    addProjectPath,
+    setAddProjectPath,
+    handleAddProject,
+    handleRemoveProject,
+    addProjectError,
+    openProfileEditor,
+    handleLaunch,
+    syncEndpoint,
+    setSyncEndpoint,
+    syncToken,
+    setSyncToken,
+    syncStripPaths,
+    setSyncStripPaths,
+    syncStatus,
+    handleSyncSave,
+    handleSyncNow,
+    syncError,
+    orgPolicyUrl,
+    setOrgPolicyUrl,
+    orgPolicy,
+    handleOrgPolicySave,
+    handleOrgPolicyFetch,
+    orgPolicyError,
+    history,
+    session,
+    events,
+    violations,
+    lastEventAtMs,
+    launchError,
+    handleStop,
+    handleBackToLauncher,
+    violationSuggestion,
+  } = props;
+
   if (view === "profile-editor" && editorProfile) {
     return (
       <main className="shell">
@@ -538,7 +874,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     );
   }
 
-  // ── History view ───────────────────────────────────────────────────
   if (view === "history") {
     const selectedHistorySession = selectedHistoryId
       ? historySessions.find((s) => s.id === selectedHistoryId) ?? null
@@ -552,9 +887,11 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
           <p className="muted">
             Inspect past sessions, blocked actions, and audit events.
           </p>
-          <button className="secondary-button" type="button" onClick={() => { setView("launcher"); setSelectedHistoryId(null); }}>
-            Back to launcher
-          </button>
+          <div className="action-row">
+            <button className="secondary-button" type="button" onClick={() => { setView("launcher"); setSelectedHistoryId(null); }}>
+              Back to launcher
+            </button>
+          </div>
         </section>
 
         <div className="columns">
@@ -583,7 +920,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     );
   }
 
-  // ── Launcher view ──────────────────────────────────────────────────
   if (view === "launcher") {
     if (!loaded) {
       return (
@@ -608,13 +944,20 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
 
         <div className="columns">
           <div className="column">
-            <PickerSection
-              title="Project picker"
-              subtitle="Choose project scope before launch."
-              items={projectItems}
-              selectedId={projectId}
-              onSelect={setProjectId}
-            />
+            {projectItems.length === 0 ? (
+              <section className="panel">
+                <h2>Project picker</h2>
+                <p className="muted">No projects added yet — pick one with the button below.</p>
+              </section>
+            ) : (
+              <PickerSection
+                title="Project picker"
+                subtitle="Choose project scope before launch."
+                items={projectItems}
+                selectedId={projectId}
+                onSelect={setProjectId}
+              />
+            )}
             <section className="panel">
               <h2>Add project</h2>
               <label className="field-label">
@@ -638,16 +981,19 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                 <ul className="plain-list">
                   {projects.filter((p) => p.source === "user-added").map((p) => (
                     <li key={p.id}>
-                      <span>{p.label}</span>
-                      <span className="muted"> {p.path}</span>
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        style={{ marginLeft: "0.5rem" }}
-                        onClick={() => { void handleRemoveProject(p.path); }}
-                      >
-                        Remove
-                      </button>
+                      <div className="history-row">
+                        <div>
+                          <span>{p.label}</span>
+                          <div className="muted">{p.path}</div>
+                        </div>
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => { void handleRemoveProject(p.path); }}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -660,13 +1006,22 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
               selectedId={agentId}
               onSelect={setAgentId}
             />
-            <PickerSection
-              title="Profile picker"
-              subtitle="Choose default-deny profile preset."
-              items={profileItems}
-              selectedId={profileId}
-              onSelect={setProfileId}
-            />
+            {profileItems.length === 0 ? (
+              <section className="panel">
+                <h2>Profile picker</h2>
+                <p className="muted">
+                  {profilesLoading ? "Loading profiles…" : "No profiles available for the selected agent."}
+                </p>
+              </section>
+            ) : (
+              <PickerSection
+                title="Profile picker"
+                subtitle="Choose default-deny profile preset."
+                items={profileItems}
+                selectedId={profileId}
+                onSelect={setProfileId}
+              />
+            )}
             {profileId ? (
               <section className="panel">
                 <button
@@ -739,7 +1094,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                     {preflight.diagnostics.map((diagnostic, index) => (
                       <li key={index}>
                         <strong>
-                          {diagnostic.severity === "pass" ? "\u2713" : diagnostic.severity === "fail" ? "\u2717" : "\u26A0"}{" "}
+                          {diagnostic.severity === "pass" ? "✓" : diagnostic.severity === "fail" ? "✗" : "⚠"}{" "}
                           {diagnostic.label}
                           {diagnostic.fromOrgPolicy ? (
                             <span> <span className="org-policy-tag">[from org policy]</span></span>
@@ -841,7 +1196,7 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
             <section className="panel">
               <h2>Recent History</h2>
               {history.length === 0 ? (
-                <p className="muted">No persisted sessions yet.</p>
+                <p className="muted">No prior sessions — launch a sandboxed session to populate history.</p>
               ) : (
                 <>
                   <ul className="plain-list">
@@ -858,13 +1213,15 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                       </li>
                     ))}
                   </ul>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => setView("history")}
-                  >
-                    View all history
-                  </button>
+                  <div className="action-row">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => setView("history")}
+                    >
+                      View all history
+                    </button>
+                  </div>
                 </>
               )}
             </section>
@@ -874,7 +1231,6 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
     );
   }
 
-  // ── Session console view ───────────────────────────────────────────
   return (
     <main className="shell">
       <section className="panel hero">
@@ -911,15 +1267,21 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
 
         <div className="column">
           <section className="panel">
-            <h2>Violation View</h2>
+            <div className="panel-header">
+              <h2>Violation View</h2>
+              <span className="rampart-session-pill" aria-label="Violation count">
+                <span className="rampart-session-pill-dot" />
+                {violations.length} block{violations.length === 1 ? "" : "s"}
+              </span>
+            </div>
             {violations.length === 0 ? (
               <p className="muted">No blocked actions yet.</p>
             ) : (
-              <ul className="plain-list">
+              <ul className="rampart-event-list">
                 {violations.map((violation) => {
                   const suggestion = violationSuggestion(violation);
                   return (
-                    <li key={violation.id}>
+                    <li key={violation.id} className="rampart-event-item rampart-event-item--violation">
                       <strong>{violation.title}</strong>
                       <div>{violation.detail}</div>
                       <div className="muted">
@@ -929,13 +1291,15 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
                         <div className="muted">Platform note: {violation.platformNote}</div>
                       ) : null}
                       {suggestion ? (
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          onClick={() => { void openProfileEditor("session", suggestion); }}
-                        >
-                          Adjust policy
-                        </button>
+                        <div className="action-row">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => { void openProfileEditor("session", suggestion); }}
+                          >
+                            Adjust policy
+                          </button>
+                        </div>
                       ) : null}
                     </li>
                   );
@@ -943,7 +1307,11 @@ function App({ daemonClient = tauriDaemonClient }: AppProps) {
               </ul>
             )}
           </section>
-          <EventList events={events} />
+          <EventList
+            events={events}
+            showLivePill
+            lastEventAt={lastEventAtMs ? formatTime(lastEventAtMs) : null}
+          />
         </div>
       </div>
     </main>

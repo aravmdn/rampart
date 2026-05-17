@@ -2,23 +2,149 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.3rem 0.6rem;
+  padding: 0.25rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.875rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .rampart-badge--info {
-  background: #dbeafe;
-  color: #1e3a8a;
+  background: var(--badge-info-bg, #dbeafe);
+  color: var(--badge-info-fg, #1e3a8a);
+  border-color: var(--badge-info-border, transparent);
 }
 
 .rampart-badge--warn {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--badge-warn-bg, #fef3c7);
+  color: var(--badge-warn-fg, #92400e);
+  border-color: var(--badge-warn-border, transparent);
 }
 
 .rampart-badge--error {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--badge-error-bg, #fee2e2);
+  color: var(--badge-error-fg, #991b1b);
+  border-color: var(--badge-error-border, transparent);
+}
+
+.rampart-badge--success {
+  background: var(--badge-success-bg, #d1fae5);
+  color: var(--badge-success-fg, #065f46);
+  border-color: var(--badge-success-border, transparent);
+}
+
+.rampart-event-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rampart-event-item {
+  position: relative;
+  padding: 10px 12px 10px 16px;
+  border-radius: 10px;
+  background: var(--event-item-bg, rgba(0, 0, 0, 0.025));
+  border: 1px solid var(--event-item-border, rgba(0, 0, 0, 0.06));
+  line-height: 1.5;
+}
+
+.rampart-event-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--event-accent, var(--accent));
+}
+
+.rampart-event-item--network::before {
+  background: var(--event-accent-network, #2563eb);
+}
+
+.rampart-event-item--filesystem::before {
+  background: var(--event-accent-filesystem, #d97706);
+}
+
+.rampart-event-item--process::before {
+  background: var(--event-accent-process, #7c3aed);
+}
+
+.rampart-event-item--violation::before {
+  background: var(--event-accent-violation, #dc2626);
+}
+
+.rampart-event-item--lifecycle::before {
+  background: var(--event-accent-lifecycle, #0891b2);
+}
+
+.rampart-event-kind {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.rampart-event-message {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.rampart-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.rampart-empty-state-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.rampart-empty-state p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.rampart-session-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--pill-bg, rgba(0, 0, 0, 0.05));
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+}
+
+.rampart-session-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--event-accent-lifecycle, #0891b2);
+}
+
+.rampart-session-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
