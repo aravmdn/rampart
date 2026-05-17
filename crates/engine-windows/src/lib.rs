@@ -701,12 +701,14 @@ impl WfpNetworkGuard {
     /// continues without network enforcement.
     pub fn open(_pid: u32, app_path: &str) -> Result<Self, WfpError> {
         use core::mem::zeroed;
+        use windows_sys::core::GUID;
         use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::{
-            FwpmEngineClose0, FwpmEngineOpen0, FwpmFilterAdd0, FWPM_FILTER0,
-            FWPM_FILTER_CONDITION0, FWPM_SESSION0, FWP_ACTION_BLOCK, FWP_BYTE_BLOB,
-            FWP_BYTE_BLOB_TYPE, FWP_CONDITION_VALUE0, FWP_CONDITION_VALUE0_0,
-            FWP_MATCH_EQUAL, FWPM_CONDITION_ALE_APP_ID, FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-            FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+            FwpmEngineClose0, FwpmEngineOpen0, FwpmFilterAdd0, FwpmFreeMemory0,
+            FwpmGetAppIdFromFileName0, FwpmSubLayerAdd0, FWPM_FILTER0,
+            FWPM_FILTER_CONDITION0, FWPM_SESSION0, FWPM_SUBLAYER0, FWP_ACTION_BLOCK,
+            FWP_BYTE_BLOB, FWP_BYTE_BLOB_TYPE, FWP_CONDITION_VALUE0, FWP_CONDITION_VALUE0_0,
+            FWP_MATCH_EQUAL, FWPM_CONDITION_ALE_APP_ID,
+            FWPM_LAYER_ALE_AUTH_CONNECT_V4, FWPM_LAYER_ALE_AUTH_CONNECT_V6,
         };
 
         let full_path = resolve_app_path(app_path).ok_or(WfpError::PathResolutionFailed)?;
@@ -720,11 +722,25 @@ impl WfpNetworkGuard {
         } else {
             full_path.clone()
         };
+        // Keep an uppercase NT path on hand so `WfpEventMonitor` can match
+        // blocked-connection events. BFE's runtime app-ID encoding is opaque,
+        // but matching the diagnostic monitor on the uppercase NT path is the
+        // same convention used previously and unaffected by this fix.
         let nt_path = win32_to_nt_path(&wfp_target).ok_or(WfpError::PathResolutionFailed)?;
-        // WFP app IDs are uppercased UTF-16LE with null terminator.
         let nt_upper = nt_path.to_uppercase();
-        let mut nt_wide: Vec<u16> =
-            nt_upper.encode_utf16().chain(std::iter::once(0u16)).collect();
+
+        // Dedicated sublayer GUID for Rampart. We install our BLOCK filters in
+        // a high-weight sublayer so arbitration favors them over Windows
+        // Defender Firewall's MPSSVC PERMIT filters (which sit in a sublayer
+        // with higher weight than the default GUID_NULL sublayer).
+        //
+        // GUID: a4b2c1d3-3e5f-4a6b-9c7d-1e2f3a4b5c6d (Rampart-specific)
+        const RAMPART_SUBLAYER_GUID: GUID = GUID {
+            data1: 0xa4b2c1d3,
+            data2: 0x3e5f,
+            data3: 0x4a6b,
+            data4: [0x9c, 0x7d, 0x1e, 0x2f, 0x3a, 0x4b, 0x5c, 0x6d],
+        };
 
         unsafe {
             let mut engine: windows_sys::Win32::Foundation::HANDLE = 0;
@@ -738,10 +754,35 @@ impl WfpNetworkGuard {
                 return Err(WfpError::EngineOpenFailed(err));
             }
 
-            let app_id = FWP_BYTE_BLOB {
-                size: (nt_wide.len() * 2) as u32,
-                data: nt_wide.as_mut_ptr() as *mut u8,
-            };
+            // Install our high-weight sublayer. Dynamic session ⇒ no PERSISTENT
+            // flag; sublayer is removed automatically when the engine closes.
+            let mut sub_name: Vec<u16> =
+                "Rampart block sublayer\0".encode_utf16().collect();
+            let mut sublayer: FWPM_SUBLAYER0 = zeroed();
+            sublayer.subLayerKey = RAMPART_SUBLAYER_GUID;
+            sublayer.displayData.name = sub_name.as_mut_ptr();
+            sublayer.flags = 0;
+            sublayer.weight = 0xFFFF; // max u16; sits above MPSSVC
+            let err = FwpmSubLayerAdd0(engine, &sublayer, core::ptr::null_mut());
+            if err != 0 {
+                FwpmEngineClose0(engine);
+                return Err(WfpError::FilterAddFailed(err));
+            }
+
+            // Ask BFE for the canonical app-ID blob. Manually constructing an
+            // uppercase NT path + null terminator yields a blob that netsh can
+            // display but does NOT byte-match what BFE compares against at
+            // connection time — the kernel uses its own normalization and a
+            // hand-built blob silently fails to match. FwpmGetAppIdFromFileName0
+            // returns the exact bytes BFE will compare.
+            let win32_target_w: Vec<u16> =
+                wfp_target.encode_utf16().chain(std::iter::once(0u16)).collect();
+            let mut app_id_ptr: *mut FWP_BYTE_BLOB = core::ptr::null_mut();
+            let err = FwpmGetAppIdFromFileName0(win32_target_w.as_ptr(), &mut app_id_ptr);
+            if err != 0 || app_id_ptr.is_null() {
+                FwpmEngineClose0(engine);
+                return Err(WfpError::PathResolutionFailed);
+            }
 
             let condition = FWPM_FILTER_CONDITION0 {
                 fieldKey: FWPM_CONDITION_ALE_APP_ID,
@@ -749,7 +790,7 @@ impl WfpNetworkGuard {
                 conditionValue: FWP_CONDITION_VALUE0 {
                     r#type: FWP_BYTE_BLOB_TYPE,
                     Anonymous: FWP_CONDITION_VALUE0_0 {
-                        byteBlob: &app_id as *const FWP_BYTE_BLOB as *mut FWP_BYTE_BLOB,
+                        byteBlob: app_id_ptr,
                     },
                 },
             };
@@ -759,6 +800,12 @@ impl WfpNetworkGuard {
             let mut display_name: Vec<u16> =
                 "Rampart outbound block\0".encode_utf16().collect();
             filter.displayData.name = display_name.as_mut_ptr();
+            filter.subLayerKey = RAMPART_SUBLAYER_GUID;
+            // weight left as FWP_EMPTY: BFE auto-assigns. (FWP_UINT8 weight
+            // values are 0..15, not 0..255 — exceeding the range trips
+            // FWP_E_INVALID_WEIGHT 0x80320025.) The sublayer's u16 weight is
+            // what wins arbitration vs Windows Defender Firewall; per-filter
+            // weight only matters when multiple filters share a sublayer.
             filter.numFilterConditions = 1;
             filter.filterCondition = &condition as *const FWPM_FILTER_CONDITION0
                 as *mut FWPM_FILTER_CONDITION0;
@@ -776,10 +823,13 @@ impl WfpNetworkGuard {
             let err = FwpmFilterAdd0(engine, &filter, core::ptr::null_mut(), &mut id);
             if err != 0 {
                 // IPv4 filter is session-scoped; closing engine removes it.
+                FwpmFreeMemory0(&mut app_id_ptr as *mut _ as *mut *mut _);
                 FwpmEngineClose0(engine);
                 return Err(WfpError::FilterAddFailed(err));
             }
 
+            // BFE copied the blob when adding the filters; it's safe to free now.
+            FwpmFreeMemory0(&mut app_id_ptr as *mut _ as *mut *mut _);
             Ok(Self { engine, nt_path: nt_upper })
         }
     }
