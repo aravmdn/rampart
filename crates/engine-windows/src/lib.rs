@@ -459,6 +459,123 @@ impl std::fmt::Display for SaclError {
 impl std::error::Error for SaclError {}
 
 // ---------------------------------------------------------------------------
+// Console child — raw CreateProcessW spawn (terminal-first agents)
+// ---------------------------------------------------------------------------
+
+/// A child process spawned with `CREATE_NEW_CONSOLE` via raw `CreateProcessW`.
+///
+/// `std::process::Command` always sets `STARTF_USESTDHANDLES` even when stdio
+/// is not piped. From a Tauri GUI process (no parent console) that flag inherits
+/// `INVALID_HANDLE_VALUE` into the child — the new console window opens but its
+/// stdio file descriptors are disconnected, producing a blank, non-interactive
+/// window. We bypass that by calling `CreateProcessW` directly without setting
+/// `STARTF_USESTDHANDLES`; Windows auto-attaches the child's stdio to the new
+/// console's buffers. This restores the direct-child PID for the agent, which
+/// in turn restores Job Object and Low Integrity enforcement on the agent
+/// process tree (these primitives were skipped for `wt.exe`-launched sessions).
+#[cfg(target_os = "windows")]
+pub struct ConsolePid {
+    pid: u32,
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(target_os = "windows")]
+impl ConsolePid {
+    pub fn id(&self) -> u32 {
+        self.pid
+    }
+
+    /// Force-terminate the console child. Best-effort; ignores failure (the
+    /// process may already have exited).
+    pub fn kill(&self) {
+        unsafe {
+            windows_sys::Win32::System::Threading::TerminateProcess(self.handle, 1);
+        }
+    }
+
+    /// Non-blocking liveness check. Returns `true` while the child is running,
+    /// `false` once it has exited (or on any error).
+    pub fn try_is_running(&self) -> bool {
+        use windows_sys::Win32::System::Threading::WaitForSingleObject;
+        // WaitForSingleObject(handle, 0): WAIT_OBJECT_0 (0) → signaled (exited),
+        // WAIT_TIMEOUT (258) → still running. Any other value (WAIT_FAILED etc.)
+        // is treated as "not running" so callers stop polling a broken handle.
+        let result = unsafe { WaitForSingleObject(self.handle, 0) };
+        result == windows_sys::Win32::Foundation::WAIT_TIMEOUT
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ConsolePid {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.handle);
+        }
+    }
+}
+
+// HANDLE is `isize`; the OS handle is owned exclusively by ConsolePid and
+// only manipulated through the ConsolePid API. Crossing threads via the
+// LocalProcessRunner HashMap is safe.
+#[cfg(target_os = "windows")]
+unsafe impl Send for ConsolePid {}
+
+/// Spawn a child process in a brand-new console window using raw `CreateProcessW`.
+///
+/// `command_line` is the full Windows command line (e.g. `cmd.exe /K claude`).
+/// It is passed verbatim as `lpCommandLine`; `lpApplicationName` is left null
+/// so PATH lookup and quoting follow the standard `CreateProcessW` rules.
+///
+/// Critically: `STARTUPINFOW.dwFlags` is left at zero — `STARTF_USESTDHANDLES`
+/// is NOT set. This is what causes Windows to wire the child's stdin/stdout/
+/// stderr to the new console's buffers instead of inheriting Tauri's (null)
+/// stdio. `bInheritHandles` is also FALSE so no parent handles leak.
+#[cfg(target_os = "windows")]
+pub fn spawn_in_new_console(
+    command_line: &str,
+    working_dir: &str,
+) -> Result<ConsolePid, std::io::Error> {
+    use core::mem::{size_of, zeroed};
+    use std::iter::once;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
+    };
+
+    let mut cmd_wide: Vec<u16> = command_line.encode_utf16().chain(once(0u16)).collect();
+    let cwd_wide: Vec<u16> = working_dir.encode_utf16().chain(once(0u16)).collect();
+
+    unsafe {
+        let mut si: STARTUPINFOW = zeroed();
+        si.cb = size_of::<STARTUPINFOW>() as u32;
+        let mut pi: PROCESS_INFORMATION = zeroed();
+
+        let ok = CreateProcessW(
+            core::ptr::null(),
+            cmd_wide.as_mut_ptr(),
+            core::ptr::null(),
+            core::ptr::null(),
+            0, // bInheritHandles = FALSE
+            CREATE_NEW_CONSOLE,
+            core::ptr::null(),
+            cwd_wide.as_ptr(),
+            &si,
+            &mut pi,
+        );
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // We only need the process handle for liveness/termination. The thread
+        // handle is not used and would otherwise leak until process exit.
+        CloseHandle(pi.hThread);
+        Ok(ConsolePid {
+            pid: pi.dwProcessId,
+            handle: pi.hProcess,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // WFP network guard — per-app-ID outbound filter
 // ---------------------------------------------------------------------------
 
@@ -496,6 +613,37 @@ fn resolve_app_path(command: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Inspect a `.cmd`/`.bat` shim to identify the runtime interpreter it invokes
+/// (`node.exe`, `python.exe`, `ruby.exe`) and return that interpreter's full
+/// Win32 path. WFP filters target the actual connecting process by image path:
+/// npm shims spawn `node.exe`, so the shim path never matches blocked traffic.
+///
+/// Co-located lookup first because npm global installs place `node.exe` in the
+/// same directory as the shim; the PATH-resolved `node` may be a different
+/// version. Falls back to `resolve_app_path` for non-npm layouts.
+#[cfg(target_os = "windows")]
+fn resolve_interpreter_path(cmd_path: &str) -> Option<String> {
+    let content = std::fs::read_to_string(cmd_path).ok()?;
+    let lower = content.to_lowercase();
+    let interpreter = if lower.contains("node") {
+        "node"
+    } else if lower.contains("python") {
+        "python"
+    } else if lower.contains("ruby") {
+        "ruby"
+    } else {
+        return None;
+    };
+
+    let parent = std::path::Path::new(cmd_path).parent()?;
+    let co_located = parent.join(format!("{interpreter}.exe"));
+    if co_located.exists() {
+        return Some(co_located.to_string_lossy().into_owned());
+    }
+
+    resolve_app_path(interpreter)
 }
 
 /// Convert a Win32 path (e.g. `C:\path\to\app.exe`) to an NT device path
@@ -562,7 +710,17 @@ impl WfpNetworkGuard {
         };
 
         let full_path = resolve_app_path(app_path).ok_or(WfpError::PathResolutionFailed)?;
-        let nt_path = win32_to_nt_path(&full_path).ok_or(WfpError::PathResolutionFailed)?;
+        // WFP matches by the connecting process's image path. npm/pnpm shims
+        // (`claude.cmd`, etc.) launch `node.exe`, which is the actual connection
+        // initiator — filtering on the `.cmd` path would never fire. Redirect
+        // to the interpreter so the filter matches the real binary.
+        let lower = full_path.to_ascii_lowercase();
+        let wfp_target = if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            resolve_interpreter_path(&full_path).unwrap_or_else(|| full_path.clone())
+        } else {
+            full_path.clone()
+        };
+        let nt_path = win32_to_nt_path(&wfp_target).ok_or(WfpError::PathResolutionFailed)?;
         // WFP app IDs are uppercased UTF-16LE with null terminator.
         let nt_upper = nt_path.to_uppercase();
         let mut nt_wide: Vec<u16> =

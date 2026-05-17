@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **WFP outbound block now actually fires for npm-installed agents (Claude Code, Codex, Aider).** `WfpNetworkGuard::open` previously targeted the resolved `.cmd` shim path, but the connecting process is the interpreter (`node.exe`). Added `resolve_interpreter_path` which inspects the shim, detects `node` / `python` / `ruby`, and prefers a co-located `<interpreter>.exe` (npm global installs co-locate the runtime); falls back to PATH. The filter now matches the real connecting binary.
+- **Job Object and Low Integrity now apply to terminal-first Windows agents.** Terminal-first sessions previously launched via `wt.exe` (commit 00ff1dd) to fix the blank-console bug, but that made `wt.exe` the direct child — Job Object and Low Integrity targeted the wrong PID and were skipped. Replaced the `wt.exe` path with `engine_windows::spawn_in_new_console`: raw `CreateProcessW` with `CREATE_NEW_CONSOLE`, no `STARTF_USESTDHANDLES`, `bInheritHandles=FALSE`. Windows auto-attaches the child's stdio to the new console, the agent (or `cmd.exe /K agent` for shim agents) is the direct child again, and enforcement propagates to the agent process tree.
+- The `if !use_wt` guards that skipped Job Object and Low Integrity assignment in `LocalProcessRunner::spawn_session` are removed; the entire `wt.exe` branch is deleted.
+
+### Changed
+
+- Terminal-first agent windows are now hosted by the default `CREATE_NEW_CONSOLE` host (`conhost.exe`) instead of Windows Terminal. Functionally identical for interactive CLI agents.
+
+---
+
 ## [0.1.0] — 2026-05-07
 
 ### Added

@@ -2,8 +2,8 @@ use engine_greywall::{EnforcementEngine, GreywallAdapter, RawEngineEvent, RawEng
 use engine_windows::BlockedNetworkEvent;
 #[cfg(target_os = "windows")]
 use engine_windows::{
-    patch_project_low_integrity_label, set_process_low_integrity, EtwAuditProvider, WindowsJob,
-    WfpEventMonitor, WfpMonitorError, WfpNetworkGuard,
+    patch_project_low_integrity_label, set_process_low_integrity, ConsolePid, EtwAuditProvider,
+    WindowsJob, WfpEventMonitor, WfpMonitorError, WfpNetworkGuard,
 };
 use policy_core::{
     compile_policy, validate_policy_against_capabilities, AgentTool, AuditEvent,
@@ -1033,6 +1033,37 @@ pub struct LocalProcessRunner {
     wfp_guards: HashMap<String, WfpNetworkGuard>,
     #[cfg(target_os = "windows")]
     wfp_monitors: HashMap<String, WfpEventMonitor>,
+    /// Terminal-first agents on Windows are spawned via raw `CreateProcessW`
+    /// (not `std::process::Command`) so the new console window has working
+    /// stdio. Their process handles live here instead of in `children` because
+    /// they are not `std::process::Child`. Job Object and Low Integrity still
+    /// target the PID stored on the wrapped `ConsolePid`.
+    #[cfg(target_os = "windows")]
+    console_children: HashMap<String, ConsolePid>,
+}
+
+/// Build a `Command` for the non-console-spawn paths: WSL2 launches and
+/// non-terminal-first agents on Windows / all agents on non-Windows. Terminal-
+/// first Windows agents (non-WSL2) go through `engine_windows::spawn_in_new_console`
+/// instead and do not pass through this helper.
+fn build_command(adapter: &AgentAdapter, session: &Session, wsl2: bool) -> Command {
+    if wsl2 {
+        // `wsl --cd <linux_path> -- <command> [args]`
+        let mut c = Command::new("wsl");
+        c.arg("--cd")
+            .arg(win_path_to_wsl(&session.project_path))
+            .arg("--")
+            .arg(&adapter.command);
+        c
+    } else if is_cmd_shim(&adapter.command) {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(&adapter.command).current_dir(&session.project_path);
+        c
+    } else {
+        let mut c = Command::new(&adapter.command);
+        c.current_dir(&session.project_path);
+        c
+    }
 }
 
 impl LocalProcessRunner {
@@ -1040,57 +1071,18 @@ impl LocalProcessRunner {
         let adapter = AgentAdapter::for_tool(&session.agent_tool);
         let wsl2 = matches!(session.isolation_mode, policy_core::IsolationMode::Wsl2);
 
-        // Terminal-first agents (non-WSL2) need a proper PTY so TUI renderers
-        // (e.g. Claude Code's Ink UI) can display and accept input.
-        // Tauri is a GUI process with no console; CREATE_NEW_CONSOLE from a GUI
-        // parent sets STARTF_USESTDHANDLES with INVALID_HANDLE_VALUE — the
-        // console window opens but stdio is disconnected, producing a blank,
-        // non-interactive window. Delegate to Windows Terminal (wt.exe) instead.
-        let use_wt = cfg!(target_os = "windows") && adapter.terminal_first && !wsl2;
-
-        let mut cmd = if wsl2 {
-            // Run the agent inside WSL2: `wsl --cd <linux_path> -- <command> [args]`
-            let mut c = Command::new("wsl");
-            c.arg("--cd")
-                .arg(win_path_to_wsl(&session.project_path))
-                .arg("--")
-                .arg(&adapter.command);
-            c
-        } else if use_wt {
-            // Launch via Windows Terminal: it owns the PTY and correctly wires
-            // stdin/stdout/stderr to the agent regardless of Tauri's console state.
-            let mut c = Command::new("wt");
-            c.arg("-d").arg(&session.project_path);
-            if is_cmd_shim(&adapter.command) {
-                c.arg("cmd").arg("/K").arg(&adapter.command);
-            } else {
-                c.arg(&adapter.command);
-            }
-            c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-            c
-        } else {
-            if is_cmd_shim(&adapter.command) {
-                let mut c = Command::new("cmd");
-                c.arg("/C").arg(&adapter.command).current_dir(&session.project_path);
-                c
-            } else {
-                let mut c = Command::new(&adapter.command);
-                c.current_dir(&session.project_path);
-                c
-            }
-        };
-        // Null stdio for non-terminal-first and WSL2 agents.
-        // Terminal-first on Windows goes through wt.exe (already set above).
-        // Terminal-first on non-Windows inherits the parent terminal's stdio.
-        if !adapter.terminal_first || wsl2 {
-            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-        }
-        for arg in &adapter.default_args {
-            cmd.arg(arg);
-        }
-        for (key, value) in &adapter.env {
-            cmd.env(key, value);
-        }
+        // Terminal-first agents on Windows (non-WSL2) need a proper console so
+        // TUI renderers (e.g. Claude Code's Ink UI) can draw and accept input.
+        // `std::process::Command` always sets `STARTF_USESTDHANDLES`, which
+        // produces a blank, non-interactive window when Tauri (a GUI process)
+        // is the parent. We bypass it by calling `CreateProcessW` directly via
+        // `engine_windows::spawn_in_new_console`. That keeps the agent as the
+        // direct child of Rampart so Job Object and Low Integrity apply to it
+        // (the previous `wt.exe` workaround broke that chain).
+        #[cfg(target_os = "windows")]
+        let use_console_spawn = adapter.terminal_first && !wsl2;
+        #[cfg(not(target_os = "windows"))]
+        let use_console_spawn = false;
 
         // Windows-native enforcement (Job Objects + Low Integrity + WFP + SACL).
         // Skipped in WSL2 mode: the agent runs inside a Linux VM where the host
@@ -1105,39 +1097,112 @@ impl LocalProcessRunner {
             }
         }
 
-        let child = cmd.spawn().map_err(|source| ProcessRunnerError::Spawn {
-            command: adapter.command.clone(),
-            source,
-        })?;
-        let pid = child.id();
+        let pid: u32;
+
+        #[cfg(target_os = "windows")]
+        if use_console_spawn {
+            // Build the full command line passed to CreateProcessW. For shim
+            // agents we wrap in `cmd.exe /K` so the console stays open after
+            // the agent exits and the user can read final output; cmd.exe
+            // resolves PATHEXT (.cmd/.bat) where CreateProcessW alone does not.
+            let command_line = if is_cmd_shim(&adapter.command) {
+                let mut s = format!("cmd.exe /K {}", adapter.command);
+                for arg in &adapter.default_args {
+                    s.push(' ');
+                    s.push_str(arg);
+                }
+                s
+            } else {
+                let mut s = adapter.command.clone();
+                for arg in &adapter.default_args {
+                    s.push(' ');
+                    s.push_str(arg);
+                }
+                s
+            };
+            // adapter.env is intentionally not threaded through CreateProcessW
+            // here: no current agent adapter sets env vars on Windows, and
+            // passing a custom environment block is a larger change than the
+            // fix justifies. If that changes, build a UTF-16 environment block
+            // and pass it as `lpEnvironment`.
+            let console = engine_windows::spawn_in_new_console(
+                &command_line,
+                &session.project_path,
+            )
+            .map_err(|source| ProcessRunnerError::Spawn {
+                command: adapter.command.clone(),
+                source,
+            })?;
+            pid = console.id();
+            self.console_children.insert(session.id.clone(), console);
+        } else {
+            let mut cmd = build_command(&adapter, session, wsl2);
+            if !adapter.terminal_first || wsl2 {
+                cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            }
+            for arg in &adapter.default_args {
+                cmd.arg(arg);
+            }
+            for (key, value) in &adapter.env {
+                cmd.env(key, value);
+            }
+            let child = cmd.spawn().map_err(|source| ProcessRunnerError::Spawn {
+                command: adapter.command.clone(),
+                source,
+            })?;
+            pid = child.id();
+            self.children.insert(session.id.clone(), child);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut cmd = build_command(&adapter, session, wsl2);
+            if !adapter.terminal_first || wsl2 {
+                cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            }
+            for arg in &adapter.default_args {
+                cmd.arg(arg);
+            }
+            for (key, value) in &adapter.env {
+                cmd.env(key, value);
+            }
+            let child = cmd.spawn().map_err(|source| ProcessRunnerError::Spawn {
+                command: adapter.command.clone(),
+                source,
+            })?;
+            pid = child.id();
+            self.children.insert(session.id.clone(), child);
+            let _ = use_console_spawn;
+        }
 
         #[cfg(target_os = "windows")]
         if !wsl2 {
-            // Job Object and Low Integrity token target the direct child PID.
-            // When launched via wt.exe the direct child is Windows Terminal,
-            // not the agent process — skip PID-targeted primitives.
-            if !use_wt {
-                match WindowsJob::assign(pid) {
-                    Ok(job) => {
-                        self.jobs.insert(session.id.clone(), job);
-                    }
-                    Err(error) => {
-                        eprintln!(
-                            "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
-                            session.id
-                        );
-                    }
+            // Job Object and Low Integrity target the direct child PID. With
+            // `spawn_in_new_console` the agent (or `cmd.exe /K agent` for shim
+            // agents) IS the direct child, so the primitives propagate to the
+            // agent process tree via job membership and token inheritance.
+            match WindowsJob::assign(pid) {
+                Ok(job) => {
+                    self.jobs.insert(session.id.clone(), job);
                 }
-
-                if let Err(error) = set_process_low_integrity(pid) {
+                Err(error) => {
                     eprintln!(
-                        "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
+                        "rampartd: Job Object assignment failed for session '{}' (pid {pid}): {error}",
                         session.id
                     );
                 }
             }
 
-            // WFP filters by app NT path (not PID) — still works for wt.exe sessions.
+            if let Err(error) = set_process_low_integrity(pid) {
+                eprintln!(
+                    "rampartd: Low integrity not applied for session '{}' (pid {pid}): {error}",
+                    session.id
+                );
+            }
+
+            // WFP filters by app NT path. For shim agents the filter targets
+            // the resolved interpreter (e.g. `node.exe`), not the `.cmd` shim
+            // — see WfpNetworkGuard::open.
             match WfpNetworkGuard::open(pid, &adapter.command) {
                 Ok(guard) => {
                     let nt_path = guard.nt_path.clone();
@@ -1175,7 +1240,6 @@ impl LocalProcessRunner {
             }
         }
 
-        self.children.insert(session.id.clone(), child);
         Ok(ManagedProcess {
             pid: Some(pid),
             command: adapter.command,
@@ -1211,6 +1275,10 @@ impl LocalProcessRunner {
     /// Returns true if the managed child process for the session is still running.
     /// Returns false if the process has exited or the session is not found.
     pub fn is_session_running(&mut self, session_id: &str) -> bool {
+        #[cfg(target_os = "windows")]
+        if let Some(console) = self.console_children.get(session_id) {
+            return console.try_is_running();
+        }
         match self.children.get_mut(session_id) {
             Some(child) => child.try_wait().map(|status| status.is_none()).unwrap_or(false),
             None => false,
@@ -1220,10 +1288,23 @@ impl LocalProcessRunner {
     fn stop_session(&mut self, session_id: &str) -> Result<(), ProcessRunnerError> {
         // Drop the job handle first so KILL_ON_JOB_CLOSE fires before we call
         // child.kill(). On non-Windows the map removals are no-op compile-outs.
+        // `wfp_monitors` is deliberately NOT removed here — the service-level
+        // stop_session drains it after we return, then drops it explicitly.
         #[cfg(target_os = "windows")]
         drop(self.jobs.remove(session_id));
         #[cfg(target_os = "windows")]
         drop(self.wfp_guards.remove(session_id));
+
+        // Terminal-first agents on Windows are tracked in console_children
+        // (raw CreateProcessW handle, not std::process::Child). The Job Object
+        // with KILL_ON_JOB_CLOSE that was just dropped above already terminated
+        // the process tree; TerminateProcess here is a belt-and-braces fallback
+        // in case the job assignment failed (logged but non-fatal in spawn).
+        #[cfg(target_os = "windows")]
+        if let Some(console) = self.console_children.remove(session_id) {
+            console.kill();
+            return Ok(());
+        }
 
         let mut child = self
             .children
