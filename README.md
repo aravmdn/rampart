@@ -1,116 +1,198 @@
+<div align="center">
+
 # Rampart
 
-Rampart is a Windows-first desktop application that runs AI coding agents under enforced least privilege. It applies OS-level controls — Windows Job Objects, Low Integrity tokens, and WFP network filters — to constrain what an agent can read, write, connect to, and spawn, then surfaces live audit events, blocked actions, and session history in a local GUI and headless CLI.
+**Run AI coding agents with a smaller blast radius.**
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-1f2937.svg)](./LICENSE)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0f766e.svg)](#architecture)
-[![Status: alpha](https://img.shields.io/badge/status-alpha-f59e0b.svg)](docs/roadmap.md)
+Local-first policy, OS-level enforcement, and an audit trail for agent sessions on Windows.
 
----
+[![Status](https://img.shields.io/badge/status-alpha-f59e0b.svg)](#project-status) [![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-0078d4.svg?logo=windows11&logoColor=white)](#quick-start) [![Stack](https://img.shields.io/badge/stack-Rust_%2B_Tauri_%2B_React-7c3aed.svg)](#architecture) [![License](https://img.shields.io/badge/license-Apache_2.0-2f855a.svg)](LICENSE)
 
-## Quick Start
+</div>
 
-Prerequisites: Windows 10/11, Administrator shell, Node 20+, pnpm 9, Rust + MSVC build tools, at least one agent CLI (`claude`, `codex`, `aider`, etc.) on PATH.
+Rampart launches tools such as Claude Code, Codex, and Aider inside a policy-controlled session. Its
+Windows engine contains the process tree, restricts writes to higher-integrity locations, blocks outbound
+connections through the Windows Filtering Platform, and records session activity for review —
+without replacing the agent's native terminal experience.
 
-```powershell
-git clone https://github.com/rampart-dev/rampart.git
-cd rampart
-pnpm install
-pnpm dev:desktop   # run from an Administrator PowerShell
-```
-
-For the full walkthrough — prerequisites, CLI usage, troubleshooting — see [GETTING_STARTED.md](GETTING_STARTED.md).
-
----
+> [!IMPORTANT]
+> Rampart is an alpha, build-from-source project. It reduces **accidental overreach by well-behaved
+> coding agents**; it is not an adversarial sandbox. Windows Native mode contains writes, but is not
+> a general read-isolation boundary. Read the [threat model](docs/threat-model.md) before relying on
+> it for sensitive workloads.
 
 ## Why Rampart
 
-- **Real enforcement, not prompt instructions.** Controls are applied at the OS level via Job Objects, token integrity, and WFP filters. The agent cannot bypass them by ignoring a system prompt.
-- **Default-deny baseline.** Agents need explicit allow rules for filesystem paths, network hosts, and allowed child processes. Nothing is permitted by accident.
-- **Agent-agnostic.** Supports Claude Code, Codex, Aider, Cursor, Copilot, Goose, OpenCode, and Gemini CLI. Adding a new agent requires an adapter, not a rewrite.
-- **Local-first.** No account, no cloud service, no required backend. Session history, profiles, and audit events stay on the machine that ran the session.
+- **Controls outside the prompt.** Operating-system primitives enforce the session boundary.
+- **Preflight before launch.** Project, agent, profile, and platform capabilities are checked first.
+- **Readable policies.** Profiles describe project paths, network access, and child commands without
+  exposing users to raw engine syntax.
+- **Visible sessions.** The desktop shows live state, violations, explanations, and local history;
+  the CLI emits JSONL for terminal workflows.
+- **Local-first.** The desktop workflow requires no account or hosted backend.
+- **Replaceable adapters.** Agent-specific launch behavior stays separate from enforcement engines.
 
----
+## What ships today
 
-## What It Does Today
+| Layer | Capability |
+|---|---|
+| Process | Windows Job Object containment with `KILL_ON_JOB_CLOSE` |
+| Filesystem | Low Integrity token plus a project-root mandatory label; writes are limited by integrity level |
+| Network | Per-application WFP outbound blocking on IPv4 and IPv6 |
+| Audit | ETW emission, normalized events, violation explanations, and session history |
+| Policy | Agent-aware presets, profile editor, signed profiles, and org policy floors |
+| Interfaces | Tauri desktop launcher/session console and a headless Rust CLI |
 
-- **Desktop launcher**: project picker, agent picker, profile picker, preflight diagnostics with capability snapshot
-- **Session console**: live audit stream (file, network, process events), violation panel with structured explanations, "Adjust policy" flow from blocked actions
-- **Profile editor**: filesystem paths, network hosts, allowed commands in product language; no raw engine syntax required
-- **Session history**: full per-session record with audit trail, violations, capability snapshot, and stop reason
-- **Windows enforcement**: Job Object process tree containment, Low Integrity token + project root SACL, WFP per-app-ID outbound network block, ETW audit trail — all runtime-verified
-- **WSL2 isolation mode**: stronger isolation inside a Hyper-V Linux VM when WSL2 is available
-- **Signed profiles**: ed25519 signatures; built-in presets are signed; invalid signatures block launch
-- **Org policy floor**: `OrgPolicy` struct defines a minimum policy applied on top of local profiles; preflight annotates which diagnostics come from org policy
-- **Centralized audit sync**: local outbox drains to a configured HTTPS endpoint on session stop
-- **Headless CLI**: `rampart run` applies full enforcement without the GUI; JSONL events to stdout
+First-class adapters and presets cover Claude Code, Codex, Aider, Cursor, GitHub Copilot CLI, Goose,
+OpenCode, and Gemini CLI.
 
----
+## Quick start
+
+You need Windows 10/11, an Administrator PowerShell, Node.js 20+, pnpm 10, Rust with the MSVC
+toolchain, Visual Studio 2022 C++ Build Tools, and at least one supported agent CLI on `PATH`.
+
+~~~powershell
+git clone https://github.com/aravmdn/rampart.git
+cd rampart
+npm install --global pnpm@10
+pnpm install
+pnpm dev:desktop
+~~~
+
+Choose a project, agent, and profile; review preflight; then start the session. Terminal-first agents
+open separately while Rampart owns enforcement and state. See
+[`GETTING_STARTED.md`](GETTING_STARTED.md) for the full walkthrough and troubleshooting.
+
+## Headless CLI
+
+The CLI uses the same service and policy path as the desktop app:
+
+~~~powershell
+cargo run -p rampart-cli -- list-profiles --agent codex --project C:\path\to\project
+cargo run -p rampart-cli -- run --agent codex --profile codex.strict --project C:\path\to\project
+~~~
+
+Press Ctrl+C to stop the session and release the process Job Object and network filters.
+
+## The session loop
+
+~~~text
+choose project + agent + profile
+              |
+              v
+      capability preflight
+              |
+              v
+     launch contained session
+              |
+              v
+  observe events and blocked actions
+              |
+              v
+   review history / refine policy
+~~~
+
+Rampart is a launch-and-control shell, not another agent chat client. The coding tool keeps its
+normal interface while Rampart manages the boundary around it.
+
+## Security boundary
+
+Windows Native mode targets three practical failure classes:
+
+1. **Runaway processes** — the process tree ends when its Job Object closes.
+2. **Unintended writes** — the labeled project stays writable while Medium-or-higher integrity
+   locations remain protected.
+3. **Unexpected outbound connections** — WFP filters block traffic for the resolved agent
+   application and are removed with the session.
+
+Rampart does **not** claim to contain malicious processes, kernel exploits, direct-syscall bypasses,
+side channels, or privilege escalation. Native mode also does not prevent reads from files the
+Windows user could already read. Use a dedicated VM or another hypervisor-backed boundary for
+adversarial code or strict secret isolation.
+
+The policy editor can express more than the native engine currently enforces. Native WFP filters
+block the resolved application broadly, without translating the profile's host allowlist into
+exceptions. An interpreter-based agent can therefore affect other processes using that same
+interpreter path. Job Objects contain a process tree but do not enforce a child-command allowlist,
+and Low Integrity is not an exact project-path allowlist.
+
+Enforcement setup failures currently log diagnostics and can leave a session running with reduced
+protection. A successful launch or preflight alone is not proof that every control was installed.
+Review runtime diagnostics as well as the [threat model](docs/threat-model.md).
 
 ## Architecture
 
-```text
- Desktop (Tauri + React)
-        |  Tauri invoke bridge
-        v
- rampartd (Rust daemon)
-   - session orchestration
-   - profile resolution
-   - persistence
-   - local APIs
-        |
-        +---> policy-core
-        |       - schema validation
-        |       - profile compilation
-        |       - event normalization
-        |
-        +---> engine adapter
-                - WindowsEnforcer (Job Object, Low Integrity, WFP, ETW)
-                - Wsl2Enforcer   (wsl --cd launch, Linux-native enforcement)
-                - GreywallAdapter (reference adapter for macOS/Linux paths)
-                  |
-                  v
-              agent process (claude, codex, aider, ...)
-```
+~~~text
+Desktop (Tauri + React)           Headless CLI
+             \                       /
+              +------ rampartd ------+
+                      |       |
+                      |       +--- policy-core
+                      |            schemas, presets, validation, events
+                      |
+                      +--- engine adapter
+                           |-- Windows: Job / Low Integrity / WFP / ETW
+                           `-- Greywall reference path
+                                      |
+                                      v
+                                 agent process
+~~~
 
-The desktop shell owns the user workflow. The daemon owns command construction, process launch, policy enforcement, and persistence. Engine adapters are replaceable; adding a new isolation backend requires implementing the engine trait, not touching the daemon or desktop layers.
+The UI owns the workflow. `rampartd` owns orchestration, supervision, persistence, and internal APIs.
+`policy-core` owns the policy and event vocabulary. Engine adapters translate that model into
+platform-specific enforcement. See [the architecture guide](docs/architecture.md) for details.
 
----
+## Project status
 
-## Repository Layout
+Rampart is alpha software and currently installs from source:
 
-```text
-rampart/
-|- apps/
-|  |- desktop/         Tauri + React desktop app
-|  |  `- src-tauri/    Tauri backend and Tauri commands
-|  `- cli/             Headless rampart binary
-|- crates/
-|  |- rampartd/        Daemon: session orchestration, persistence, local APIs
-|  |- policy-core/     Policy schema, validation, presets, event taxonomy
-|  |- engine-greywall/ Reference adapter (macOS/Linux compatibility)
-|  `- engine-windows/  Windows enforcement (Job Object, WFP, ETW, WSL2)
-|- packages/
-|  `- shared-ui/       Reusable React components (HistoryList, ProfileEditorPanel, ...)
-`- docs/
-```
+- Windows enforcement primitives are implemented; the project records Administrator-level runtime
+  checks in its [roadmap](docs/roadmap.md). Native coverage remains limited as described above.
+- The WFP violation subscription exists; block-to-console delivery still needs final end-to-end
+  confirmation with a real agent.
+- The launcher, profile editor, session console, history, and local persistence are implemented.
+- There is no signed installer or stable release yet.
+- macOS and Linux are not first-class supported platforms; `engine-greywall` is a reference adapter.
 
----
+See the [roadmap](docs/roadmap.md) and [changelog](CHANGELOG.md) for current delivery details.
+
+## Repository layout
+
+~~~text
+apps/desktop/           Tauri + React desktop app
+apps/cli/               headless rampart binary
+crates/rampartd/         orchestration, persistence, preflight, and APIs
+crates/policy-core/      policy schema, presets, validation, and event taxonomy
+crates/engine-windows/   Windows enforcement and launch
+crates/engine-greywall/  reference adapter for non-Windows paths
+packages/shared-ui/      reusable React components and design tokens
+docs/                   architecture, threat model, roadmap, and public decisions
+~~~
+
+## Development and contributing
+
+~~~powershell
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+pnpm --filter @rampart/desktop test
+pnpm --filter @rampart/desktop typecheck
+pnpm build
+~~~
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Bugs and focused proposals
+are welcome in [GitHub Issues](https://github.com/aravmdn/rampart/issues).
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [GETTING_STARTED.md](GETTING_STARTED.md) | Prerequisites, installation, walkthrough, CLI, troubleshooting |
-| [docs/architecture.md](docs/architecture.md) | Module boundaries, IPC layer, engine adapter contract |
-| [docs/threat-model.md](docs/threat-model.md) | What Rampart contains, what it does not, known gaps |
-| [docs/roadmap.md](docs/roadmap.md) | Phase status and what is coming next |
-| [docs/business-model.md](docs/business-model.md) | Free local product and paid team layer |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, tests, CLI build, issue tracker |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
-
----
+| Document | Purpose |
+|---|---|
+| [Getting started](GETTING_STARTED.md) | Installation, first session, CLI, and troubleshooting |
+| [Threat model](docs/threat-model.md) | Security guarantees, exclusions, and limitations |
+| [Architecture](docs/architecture.md) | Components, policy flow, and engine adapters |
+| [Roadmap](docs/roadmap.md) | Phase status and next delivery work |
+| [Contributing](CONTRIBUTING.md) | Development setup and contribution expectations |
+| [Changelog](CHANGELOG.md) | Shipped changes |
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE).
+Rampart is available under the [Apache License 2.0](LICENSE).

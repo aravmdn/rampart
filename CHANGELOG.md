@@ -16,11 +16,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- Refreshed the README with source installation, CLI examples, contribution links, and explicit
+  native enforcement limits; aligned onboarding links and pnpm requirements with this repository.
 - Terminal-first agent windows are now hosted by the default `CREATE_NEW_CONSOLE` host (`conhost.exe`) instead of Windows Terminal. Functionally identical for interactive CLI agents.
 
 ---
 
-## [0.1.0] — 2026-05-07
+## 0.1.0 — 2026-05-07
 
 ### Added
 
@@ -108,5 +110,3 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - WFP filters are per-application-ID and scoped to the session; no machine-wide rules; filters auto-remove on session end
 - Signed profile distribution: ed25519 signatures; Invalid signature hard-blocks launch
 - ETW audit trail: every session lifecycle and enforcement event captured by OS-level tracing
-
-[0.1.0]: https://github.com/rampart-dev/rampart/releases/tag/v0.1.0

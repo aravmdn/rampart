@@ -9,7 +9,7 @@ Rampart is a Windows-first desktop app that runs AI coding agents under enforced
 - **Windows 10 or Windows 11** — enforcement primitives (Job Objects, WFP, Low Integrity token) are Windows-only.
 - **Administrator privileges** — required at runtime for WFP filter installation, SACL patching, and Job Object assignment. Without elevation, Rampart launches but enforcement falls back silently.
 - **Node.js 20 or later** — `node --version` should print `v20.x.x` or higher.
-- **pnpm 9.x** — install with `npm install -g pnpm@9` if not present.
+- **pnpm 10.x** — install with `npm install -g pnpm@10` if not present.
 - **Rust via rustup** — `rustup` with the `x86_64-pc-windows-msvc` target:
   ```
   rustup target add x86_64-pc-windows-msvc
@@ -28,7 +28,7 @@ Rampart is a Windows-first desktop app that runs AI coding agents under enforced
 Clone the repository and install JavaScript dependencies:
 
 ```powershell
-git clone https://github.com/rampart-dev/rampart.git
+git clone https://github.com/aravmdn/rampart.git
 cd rampart
 pnpm install
 ```

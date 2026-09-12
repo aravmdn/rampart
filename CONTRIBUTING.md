@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Rampart! This guide will help you
 Install these before you begin:
 
 - **Node.js** (LTS 20+) — for TypeScript and frontend tooling
-- **pnpm** (9.x) — monorepo package manager
+- **pnpm** (10.x) — monorepo package manager
 - **Rust via rustup** — with x86_64-pc-windows-msvc target on Windows
 - **Visual Studio 2022 Build Tools** — with the "Desktop development with C++" workload (required for MSVC linker on Windows)
 - **WSL2** (optional) — only required if you want to test the WSL2 isolation mode
@@ -16,7 +16,7 @@ Install these before you begin:
 
 1. **Clone the repository:**
    ```sh
-   git clone https://github.com/rampart-dev/rampart.git
+   git clone https://github.com/aravmdn/rampart.git
    cd rampart
    ```
 
@@ -87,7 +87,7 @@ See root `AGENTS.md` for full architecture guardrails.
 
 ## Reporting Issues and Getting Help
 
-- **GitHub Issues:** Report bugs or suggest features on the [issues page](https://github.com/rampart-dev/rampart/issues).
+- **GitHub Issues:** Report bugs or suggest features on the [issues page](https://github.com/aravmdn/rampart/issues).
 - **Architecture and Design Questions:** See `docs/architecture.md`, `docs/threat-model.md`, and `docs/roadmap.md` for context.
 
 ## License

@@ -165,6 +165,10 @@ Reference-informed next steps inside those phases:
 - Prefer open formats and auditable logic. Users must be able to understand why the product blocked something.
 
 ## Documentation rules
+- The README is the public onboarding entry point; use `aravmdn/rampart` links and pnpm 10 as
+  declared in `package.json`. Preserve its distinction between authored policy and native engine
+  coverage: read isolation, per-host exceptions, and child-command allowlists are not guaranteed by
+  the current Windows primitives. Setup failures can leave sessions running with reduced protection.
 - Keep architecture and product reasoning in `docs/`.
 - Record key product decisions as ADRs once implementation begins.
 - When making architecture changes, update `docs/architecture.md`, `docs/public-docs-policy.md`, and this file together.
